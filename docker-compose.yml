@@ -1,0 +1,59 @@
+version: "3.8"
+
+services:
+  # ── Data Warehouse (PostgreSQL) ──
+  warehouse:
+    image: postgres:16-alpine
+    container_name: askvj-warehouse
+    environment:
+      POSTGRES_DB: askvj_warehouse
+      POSTGRES_USER: askvj
+      POSTGRES_PASSWORD: askvj_dev
+    ports:
+      - "5432:5432"
+    volumes:
+      - warehouse_data:/var/lib/postgresql/data
+      # Auto-run schema setup on first start
+      - ./backend/etl/sql/bronze_schema.sql:/docker-entrypoint-initdb.d/01_bronze.sql
+      - ./backend/etl/sql/silver_schema.sql:/docker-entrypoint-initdb.d/02_silver.sql
+      - ./backend/etl/sql/gold_schema.sql:/docker-entrypoint-initdb.d/03_gold.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U askvj -d askvj_warehouse"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── Vector Database (ChromaDB) ──
+  vectordb:
+    image: chromadb/chroma:latest
+    container_name: askvj-vectordb
+    ports:
+      - "8000:8000"
+    volumes:
+      - vectordb_data:/chroma/chroma
+    environment:
+      ANONYMIZED_TELEMETRY: "false"
+
+  # ── Local LLM (Ollama) ──
+  # NOTE: Requires GPU passthrough. Run with:
+  #   docker compose --profile gpu up
+  ollama:
+    image: ollama/ollama:latest
+    container_name: askvj-ollama
+    profiles: ["gpu"]
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+volumes:
+  warehouse_data:
+  vectordb_data:
+  ollama_data:

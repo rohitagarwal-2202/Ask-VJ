@@ -1,0 +1,24 @@
+# Ask VJ — Python Backend Dependencies
+
+# Web framework
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+pydantic==2.10.4
+
+# Database
+sqlalchemy==2.0.36
+psycopg2-binary==2.9.10
+pyodbc==5.2.0
+
+# LLM integration
+langchain==0.3.14
+langchain-community==0.3.14
+langchain-ollama==0.3.0
+
+# Embeddings & Vector DB
+sentence-transformers==3.3.1
+chromadb==0.5.23
+
+# Utilities
+python-dotenv==1.0.1
+httpx==0.28.1

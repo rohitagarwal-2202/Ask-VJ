@@ -1,0 +1,154 @@
+"""
+Ask VJ — Centralized Configuration
+
+All database connections, LLM endpoints, and ETL settings.
+Reads from environment variables with sensible defaults for local development.
+"""
+
+import os
+from dataclasses import dataclass, field
+
+
+@dataclass
+class SourceDB:
+    """Connection config for a source system database."""
+    name: str
+    driver: str  # "mssql" or "postgresql"
+    host: str
+    port: int
+    database: str
+    username: str
+    password: str
+
+    @property
+    def connection_string(self) -> str:
+        if self.driver == "mssql":
+            return (
+                f"mssql+pyodbc://{self.username}:{self.password}"
+                f"@{self.host}:{self.port}/{self.database}"
+                f"?driver=ODBC+Driver+18+for+SQL+Server&TrustServerCertificate=yes"
+            )
+        return (
+            f"postgresql+psycopg2://{self.username}:{self.password}"
+            f"@{self.host}:{self.port}/{self.database}"
+        )
+
+
+@dataclass
+class WarehouseDB:
+    """Connection config for the Ask VJ data warehouse."""
+    host: str = os.getenv("WAREHOUSE_HOST", "localhost")
+    port: int = int(os.getenv("WAREHOUSE_PORT", "5432"))
+    database: str = os.getenv("WAREHOUSE_DB", "askvj_warehouse")
+    username: str = os.getenv("WAREHOUSE_USER", "askvj")
+    password: str = os.getenv("WAREHOUSE_PASSWORD", "askvj_dev")
+
+    # Read-only role for the intelligence engine
+    readonly_user: str = os.getenv("WAREHOUSE_RO_USER", "askvj_readonly")
+    readonly_password: str = os.getenv("WAREHOUSE_RO_PASSWORD", "askvj_ro_dev")
+
+    @property
+    def connection_string(self) -> str:
+        return (
+            f"postgresql+psycopg2://{self.username}:{self.password}"
+            f"@{self.host}:{self.port}/{self.database}"
+        )
+
+    @property
+    def readonly_connection_string(self) -> str:
+        return (
+            f"postgresql+psycopg2://{self.readonly_user}:{self.readonly_password}"
+            f"@{self.host}:{self.port}/{self.database}"
+        )
+
+
+@dataclass
+class LLMConfig:
+    """Local LLM configuration — no data leaves the network."""
+    # Reasoning model (intent parsing, response formatting)
+    reasoning_model: str = os.getenv("LLM_REASONING_MODEL", "mixtral:8x7b")
+    reasoning_endpoint: str = os.getenv("LLM_REASONING_ENDPOINT", "http://localhost:11434")
+
+    # SQL generation model
+    sql_model: str = os.getenv("LLM_SQL_MODEL", "sqlcoder:15b")
+    sql_endpoint: str = os.getenv("LLM_SQL_ENDPOINT", "http://localhost:11434")
+
+    # Embedding model (for RAG)
+    embedding_model: str = os.getenv("LLM_EMBEDDING_MODEL", "nomic-embed-text")
+    embedding_endpoint: str = os.getenv("LLM_EMBEDDING_ENDPOINT", "http://localhost:11434")
+
+    # Inference settings
+    temperature: float = float(os.getenv("LLM_TEMPERATURE", "0.1"))
+    max_tokens: int = int(os.getenv("LLM_MAX_TOKENS", "2048"))
+    request_timeout: int = int(os.getenv("LLM_TIMEOUT", "60"))
+
+
+@dataclass
+class ETLConfig:
+    """ETL pipeline settings."""
+    sync_interval_hours: int = int(os.getenv("ETL_SYNC_INTERVAL_HOURS", "2"))
+    bronze_retention_days: int = int(os.getenv("ETL_BRONZE_RETENTION_DAYS", "90"))
+    batch_size: int = int(os.getenv("ETL_BATCH_SIZE", "5000"))
+    query_timeout_seconds: int = int(os.getenv("ETL_QUERY_TIMEOUT", "300"))
+
+    # Entity resolution thresholds
+    fuzzy_match_threshold: float = float(os.getenv("ETL_FUZZY_THRESHOLD", "0.6"))
+    auto_resolve_confidence: float = float(os.getenv("ETL_AUTO_RESOLVE_CONFIDENCE", "0.85"))
+
+
+@dataclass
+class VectorDBConfig:
+    """Vector database for RAG schema retrieval."""
+    backend: str = os.getenv("VECTOR_DB_BACKEND", "chromadb")  # chromadb or weaviate
+    host: str = os.getenv("VECTOR_DB_HOST", "localhost")
+    port: int = int(os.getenv("VECTOR_DB_PORT", "8000"))
+    collection_name: str = os.getenv("VECTOR_DB_COLLECTION", "askvj_schema")
+
+
+@dataclass
+class AppConfig:
+    """Top-level application configuration."""
+    warehouse: WarehouseDB = field(default_factory=WarehouseDB)
+    llm: LLMConfig = field(default_factory=LLMConfig)
+    etl: ETLConfig = field(default_factory=ETLConfig)
+    vector_db: VectorDBConfig = field(default_factory=VectorDBConfig)
+
+    # Source system connections (populated from env or config file)
+    source_databases: list[SourceDB] = field(default_factory=list)
+
+    # API settings
+    api_host: str = os.getenv("API_HOST", "0.0.0.0")
+    api_port: int = int(os.getenv("API_PORT", "8000"))
+    debug: bool = os.getenv("DEBUG", "true").lower() == "true"
+
+
+def load_config() -> AppConfig:
+    """Load configuration from environment variables."""
+    config = AppConfig()
+
+    # Add source databases from environment
+    # Farvision (MS SQL Server)
+    if os.getenv("FARVISION_HOST"):
+        config.source_databases.append(SourceDB(
+            name="farvision",
+            driver="mssql",
+            host=os.getenv("FARVISION_HOST", ""),
+            port=int(os.getenv("FARVISION_PORT", "1433")),
+            database=os.getenv("FARVISION_DB", ""),
+            username=os.getenv("FARVISION_USER", ""),
+            password=os.getenv("FARVISION_PASSWORD", ""),
+        ))
+
+    # VJ Sales App (PostgreSQL)
+    if os.getenv("VJSALES_HOST"):
+        config.source_databases.append(SourceDB(
+            name="vjsales",
+            driver="postgresql",
+            host=os.getenv("VJSALES_HOST", ""),
+            port=int(os.getenv("VJSALES_PORT", "5432")),
+            database=os.getenv("VJSALES_DB", ""),
+            username=os.getenv("VJSALES_USER", ""),
+            password=os.getenv("VJSALES_PASSWORD", ""),
+        ))
+
+    return config
