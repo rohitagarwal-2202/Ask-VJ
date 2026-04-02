@@ -151,4 +151,16 @@ def load_config() -> AppConfig:
             password=os.getenv("VJSALES_PASSWORD", ""),
         ))
 
+    # VJOP Referral & Loyalty (MS SQL Server)
+    if os.getenv("VJOP_HOST"):
+        config.source_databases.append(SourceDB(
+            name="vjop",
+            driver="mssql",
+            host=os.getenv("VJOP_HOST", ""),
+            port=int(os.getenv("VJOP_PORT", "1433")),
+            database=os.getenv("VJOP_DB", "RefferalAndLoyalty"),
+            username=os.getenv("VJOP_USER", ""),
+            password=os.getenv("VJOP_PASSWORD", ""),
+        ))
+
     return config
