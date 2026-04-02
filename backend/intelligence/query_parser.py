@@ -10,9 +10,8 @@ import logging
 from dataclasses import dataclass, field
 from enum import Enum
 
-import httpx
-
 from backend.config import LLMConfig
+from backend.intelligence.llm_client import call_llm
 
 logger = logging.getLogger(__name__)
 
@@ -134,22 +133,8 @@ class QueryParser:
         return parsed
 
     async def _call_llm(self, prompt: str) -> str:
-        """Call the local reasoning LLM via Ollama-compatible API."""
-        async with httpx.AsyncClient(timeout=self.config.request_timeout) as client:
-            response = await client.post(
-                f"{self.config.reasoning_endpoint}/api/chat",
-                json={
-                    "model": self.config.reasoning_model,
-                    "messages": [{"role": "user", "content": prompt}],
-                    "stream": False,
-                    "options": {
-                        "temperature": self.config.temperature,
-                        "num_predict": self.config.max_tokens,
-                    },
-                },
-            )
-            response.raise_for_status()
-            return response.json()["message"]["content"]
+        """Call the reasoning LLM (Anthropic or Ollama based on config)."""
+        return await call_llm(self.config, prompt, role="reasoning")
 
     def _parse_llm_response(self, response_text: str, original_question: str) -> ParsedQuery:
         """Parse the LLM's JSON response into a ParsedQuery object."""

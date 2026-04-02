@@ -11,9 +11,8 @@ against the real Farvision / VJ Sales / VJOP databases.
 import logging
 import re
 
-import httpx
-
 from backend.config import LLMConfig
+from backend.intelligence.llm_client import call_llm
 from backend.intelligence.query_parser import ParsedQuery, QueryIntent
 from backend.intelligence.schema_retriever import TableSchema
 
@@ -363,22 +362,10 @@ class SQLGenerator:
         return sql
 
     async def _call_llm(self, prompt: str) -> str:
-        """Call the local SQL LLM via Ollama-compatible API."""
-        async with httpx.AsyncClient(timeout=self.config.request_timeout) as client:
-            response = await client.post(
-                f"{self.config.sql_endpoint}/api/chat",
-                json={
-                    "model": self.config.sql_model,
-                    "messages": [{"role": "user", "content": prompt}],
-                    "stream": False,
-                    "options": {
-                        "temperature": 0.0,  # Deterministic for SQL
-                        "num_predict": self.config.max_tokens,
-                    },
-                },
-            )
-            response.raise_for_status()
-            return response.json()["message"]["content"]
+        """Call the SQL LLM (Anthropic or Ollama based on config)."""
+        return await call_llm(
+            self.config, prompt, role="sql", temperature=0.0,
+        )
 
     def _clean_sql(self, raw: str) -> str:
         """Strip markdown fences and whitespace from LLM output."""

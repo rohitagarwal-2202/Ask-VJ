@@ -64,16 +64,21 @@ class WarehouseDB:
 
 @dataclass
 class LLMConfig:
-    """Local LLM configuration — no data leaves the network."""
-    # Reasoning model (intent parsing, response formatting)
+    """LLM configuration — supports Anthropic API or local Ollama."""
+    # Provider: "anthropic" for Claude API, "ollama" for local LLM
+    provider: str = os.getenv("LLM_PROVIDER", "anthropic")
+
+    # Anthropic API settings (used when provider = "anthropic")
+    anthropic_api_key: str = os.getenv("ANTHROPIC_API_KEY", "")
+    anthropic_model: str = os.getenv("ANTHROPIC_MODEL", "claude-sonnet-4-20250514")
+
+    # Local Ollama settings (used when provider = "ollama")
     reasoning_model: str = os.getenv("LLM_REASONING_MODEL", "mixtral:8x7b")
     reasoning_endpoint: str = os.getenv("LLM_REASONING_ENDPOINT", "http://localhost:11434")
-
-    # SQL generation model
     sql_model: str = os.getenv("LLM_SQL_MODEL", "sqlcoder:15b")
     sql_endpoint: str = os.getenv("LLM_SQL_ENDPOINT", "http://localhost:11434")
 
-    # Embedding model (for RAG)
+    # Embedding model (for RAG — always via Ollama)
     embedding_model: str = os.getenv("LLM_EMBEDDING_MODEL", "nomic-embed-text")
     embedding_endpoint: str = os.getenv("LLM_EMBEDDING_ENDPOINT", "http://localhost:11434")
 

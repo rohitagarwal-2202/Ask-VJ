@@ -9,9 +9,8 @@ import json
 import logging
 from datetime import datetime
 
-import httpx
-
 from backend.config import LLMConfig
+from backend.intelligence.llm_client import call_llm
 from backend.intelligence.executor import QueryResult
 from backend.intelligence.verifier import VerificationResult
 
@@ -223,22 +222,11 @@ class ResponseFormatter:
         return table
 
     async def _call_llm(self, prompt: str) -> str:
-        """Call the reasoning LLM."""
-        async with httpx.AsyncClient(timeout=self.config.request_timeout) as client:
-            response = await client.post(
-                f"{self.config.reasoning_endpoint}/api/chat",
-                json={
-                    "model": self.config.reasoning_model,
-                    "messages": [{"role": "user", "content": prompt}],
-                    "stream": False,
-                    "options": {
-                        "temperature": 0.3,
-                        "num_predict": 1024,
-                    },
-                },
-            )
-            response.raise_for_status()
-            return response.json()["message"]["content"]
+        """Call the reasoning LLM (Anthropic or Ollama based on config)."""
+        return await call_llm(
+            self.config, prompt, role="reasoning",
+            temperature=0.3, max_tokens=1024,
+        )
 
     @staticmethod
     def _format_inr(amount: float) -> str:
