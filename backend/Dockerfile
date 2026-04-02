@@ -17,7 +17,8 @@ RUN apt-get update && \
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY . .
+# Copy into /app/backend/ so "backend.api.main" resolves correctly
+COPY . ./backend/
 
 EXPOSE 8000
 
