@@ -4,6 +4,11 @@ Ask VJ ETL Pipeline — Main Orchestrator
 Runs the full Bronze → Silver → Gold pipeline.
 Designed to be called by cron every 2 hours.
 
+Sources:
+  1. Farvision ERP DWH (SQL Server, TenantId=75)
+  2. VJ Sales App (PostgreSQL/Supabase)
+  3. VJOP Referral & Loyalty (SQL Server)
+
 Usage:
     python -m backend.etl.run_pipeline
 """
@@ -15,6 +20,7 @@ from datetime import datetime
 from backend.config import load_config
 from backend.etl.extractors.vj_sales import VJSalesExtractor
 from backend.etl.extractors.farvision import FarvisionExtractor
+from backend.etl.extractors.vjop import VJOPExtractor
 from backend.etl.resolvers.entity_resolver import EntityResolver
 from backend.etl.resolvers.project_mapper import ProjectMapper
 from backend.etl.transformers.dimensions import DimensionTransformer
@@ -28,6 +34,13 @@ logging.basicConfig(
     datefmt="%Y-%m-%d %H:%M:%S",
 )
 logger = logging.getLogger("etl.pipeline")
+
+# Map source database names to extractor classes
+EXTRACTORS = {
+    "vjsales": VJSalesExtractor,
+    "farvision": FarvisionExtractor,
+    "vjop": VJOPExtractor,
+}
 
 
 def run_pipeline():
@@ -45,14 +58,12 @@ def run_pipeline():
     extract_results = {}
 
     for source_db in config.source_databases:
-        if source_db.name == "vjsales":
-            extractor = VJSalesExtractor(source_db.connection_string, warehouse_conn)
-        elif source_db.name == "farvision":
-            extractor = FarvisionExtractor(source_db.connection_string, warehouse_conn)
-        else:
+        extractor_cls = EXTRACTORS.get(source_db.name)
+        if not extractor_cls:
             logger.warning("Unknown source: %s, skipping", source_db.name)
             continue
 
+        extractor = extractor_cls(source_db.connection_string, warehouse_conn)
         results = extractor.extract()
         extract_results[source_db.name] = results
 
@@ -61,18 +72,23 @@ def run_pipeline():
     # ── Step 2: RESOLVE (Silver) ──────────────────────────────
     logger.info("── Step 2: RESOLVE (Silver) ──")
 
-    # Check for unmapped projects
+    # Auto-discover new projects from bronze data
     project_mapper = ProjectMapper(warehouse_conn)
+    discovery = project_mapper.auto_discover_projects()
+    logger.info("Project auto-discovery: %s", discovery)
+
+    # Check for any remaining unmapped projects
     unmapped = project_mapper.detect_unmapped_projects()
-    if unmapped["vjsales_unmapped"] or unmapped["farvision_unmapped"]:
+    if any(unmapped.values()):
         logger.warning(
-            "Unmapped projects detected! VJ Sales: %s, Farvision: %s. "
-            "Add these to silver.project_crosswalk for entity resolution.",
-            unmapped["vjsales_unmapped"],
-            unmapped["farvision_unmapped"],
+            "Unmapped projects remain! VJ Sales: %d, Farvision: %d, VJOP: %d. "
+            "Add these to silver.project_crosswalk manually.",
+            len(unmapped["vjsales_unmapped"]),
+            len(unmapped["farvision_unmapped"]),
+            len(unmapped["vjop_unmapped"]),
         )
 
-    # Run entity resolution
+    # Run entity resolution (ID-based matching + fuzzy fallback)
     resolver = EntityResolver(warehouse_conn, config.etl.fuzzy_match_threshold)
     resolve_stats = resolver.resolve()
     logger.info("Entity resolution: %s", resolve_stats)
@@ -106,6 +122,9 @@ def run_pipeline():
     elapsed = (datetime.now() - start_time).total_seconds()
     logger.info("=" * 60)
     logger.info("ASK VJ ETL PIPELINE — Completed in %.1f seconds", elapsed)
+    logger.info("Extract: %s", extract_results)
+    logger.info("Resolve: %s", resolve_stats)
+    logger.info("Quality errors: %d", len(errors))
     logger.info("=" * 60)
 
     return {
