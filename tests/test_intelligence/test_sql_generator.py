@@ -141,16 +141,6 @@ async def test_generate_mocks_llm(generator):
     """generate() should call the LLM, clean the SQL, validate it, and return safe SQL."""
     fake_sql = "SELECT COUNT(*) FROM gold.fact_bookings WHERE is_cancelled = false LIMIT 1000;"
 
-    mock_response = AsyncMock()
-    mock_response.status_code = 200
-    mock_response.json.return_value = {"message": {"content": fake_sql}}
-    mock_response.raise_for_status = AsyncMock()
-
-    mock_client = AsyncMock()
-    mock_client.post.return_value = mock_response
-    mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-    mock_client.__aexit__ = AsyncMock(return_value=False)
-
     parsed = ParsedQuery(
         intent=QueryIntent.METRIC_QUERY,
         raw_question="How many active bookings?",
@@ -161,7 +151,7 @@ async def test_generate_mocks_llm(generator):
 
     schema_context = "-- Table: gold.fact_bookings\n-- Columns: booking_key INT, is_cancelled BOOLEAN"
 
-    with patch("backend.intelligence.sql_generator.httpx.AsyncClient", return_value=mock_client):
+    with patch.object(SQLGenerator, "_call_llm", new_callable=AsyncMock, return_value=fake_sql):
         result = await generator.generate(
             question="How many active bookings?",
             parsed=parsed,
@@ -171,8 +161,6 @@ async def test_generate_mocks_llm(generator):
     assert "SELECT" in result.upper()
     assert "gold.fact_bookings" in result
     assert result.endswith(";")
-    # Verify the LLM was actually called
-    mock_client.post.assert_called_once()
 
 
 @pytest.mark.asyncio
@@ -180,23 +168,13 @@ async def test_generate_raises_on_unsafe_sql(generator):
     """generate() should raise ValueError if the LLM returns unsafe SQL."""
     unsafe_sql = "DROP TABLE gold.fact_bookings;"
 
-    mock_response = AsyncMock()
-    mock_response.status_code = 200
-    mock_response.json.return_value = {"message": {"content": unsafe_sql}}
-    mock_response.raise_for_status = AsyncMock()
-
-    mock_client = AsyncMock()
-    mock_client.post.return_value = mock_response
-    mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-    mock_client.__aexit__ = AsyncMock(return_value=False)
-
     parsed = ParsedQuery(
         intent=QueryIntent.METRIC_QUERY,
         raw_question="Drop the bookings table",
         confidence=0.5,
     )
 
-    with patch("backend.intelligence.sql_generator.httpx.AsyncClient", return_value=mock_client):
+    with patch.object(SQLGenerator, "_call_llm", new_callable=AsyncMock, return_value=unsafe_sql):
         with pytest.raises(ValueError, match="Unsafe SQL"):
             await generator.generate(
                 question="Drop the bookings table",

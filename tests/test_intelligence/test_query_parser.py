@@ -1,7 +1,7 @@
 """
 Tests for backend.intelligence.query_parser — QueryParser and ParsedQuery.
 
-Mocks the httpx LLM call so no running Ollama instance is needed.
+Mocks QueryParser._call_llm so no running Ollama instance is needed.
 """
 
 import json
@@ -46,18 +46,18 @@ def _make_llm_json(**overrides):
     return json.dumps(data)
 
 
-def _mock_httpx_response(json_body: str):
-    """Return a patched AsyncClient that returns the given JSON body."""
-    mock_response = AsyncMock()
-    mock_response.status_code = 200
-    mock_response.json.return_value = {"message": {"content": json_body}}
-    mock_response.raise_for_status = AsyncMock()
+def _patch_llm(json_body: str):
+    """Return a patch context that mocks QueryParser._call_llm to return json_body."""
+    return patch.object(
+        QueryParser, "_call_llm", new_callable=AsyncMock, return_value=json_body,
+    )
 
-    mock_client = AsyncMock()
-    mock_client.post.return_value = mock_response
-    mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-    mock_client.__aexit__ = AsyncMock(return_value=False)
-    return mock_client
+
+def _patch_llm_error():
+    """Return a patch context that makes _call_llm raise an exception."""
+    return patch.object(
+        QueryParser, "_call_llm", new_callable=AsyncMock, side_effect=Exception("connection refused"),
+    )
 
 
 # ── Core parse flow ──────────────────────────────────────────────
@@ -72,7 +72,7 @@ async def test_parse_returns_parsed_query(parser):
         time_range="this_month",
         confidence=0.92,
     )
-    with patch("backend.intelligence.query_parser.httpx.AsyncClient", return_value=_mock_httpx_response(body)):
+    with _patch_llm(body):
         result = await parser.parse("How many bookings this month at Yashwin Hinjawadi?")
 
     assert isinstance(result, ParsedQuery)
@@ -90,7 +90,7 @@ async def test_parse_returns_parsed_query(parser):
 async def test_intent_classification_sales_metric(parser):
     """Questions about booking counts should map to METRIC_QUERY."""
     body = _make_llm_json(intent="METRIC_QUERY", metric="booking_count")
-    with patch("backend.intelligence.query_parser.httpx.AsyncClient", return_value=_mock_httpx_response(body)):
+    with _patch_llm(body):
         result = await parser.parse("How many bookings this month?")
 
     assert result.intent == QueryIntent.METRIC_QUERY
@@ -100,7 +100,7 @@ async def test_intent_classification_sales_metric(parser):
 async def test_intent_classification_collection(parser):
     """Collection efficiency questions should map to METRIC_QUERY."""
     body = _make_llm_json(intent="METRIC_QUERY", metric="collection_efficiency")
-    with patch("backend.intelligence.query_parser.httpx.AsyncClient", return_value=_mock_httpx_response(body)):
+    with _patch_llm(body):
         result = await parser.parse("What is the collection efficiency this quarter?")
 
     assert result.intent == QueryIntent.METRIC_QUERY
@@ -111,7 +111,7 @@ async def test_intent_classification_collection(parser):
 async def test_intent_classification_clarification(parser):
     """Terminology questions should map to CLARIFICATION."""
     body = _make_llm_json(intent="CLARIFICATION")
-    with patch("backend.intelligence.query_parser.httpx.AsyncClient", return_value=_mock_httpx_response(body)):
+    with _patch_llm(body):
         result = await parser.parse("What is a booking?")
 
     assert result.intent == QueryIntent.CLARIFICATION
@@ -129,7 +129,7 @@ async def test_time_range_extraction(parser):
     ]
     for question, expected_range in test_cases:
         body = _make_llm_json(time_range=expected_range)
-        with patch("backend.intelligence.query_parser.httpx.AsyncClient", return_value=_mock_httpx_response(body)):
+        with _patch_llm(body):
             result = await parser.parse(question)
         assert result.time_range == expected_range, f"Failed for question: {question}"
 
@@ -138,7 +138,7 @@ async def test_time_range_extraction(parser):
 async def test_project_extraction(parser):
     """Verify project name extraction from the question."""
     body = _make_llm_json(project="Yashwin Hinjawadi")
-    with patch("backend.intelligence.query_parser.httpx.AsyncClient", return_value=_mock_httpx_response(body)):
+    with _patch_llm(body):
         result = await parser.parse("How are bookings at Yashwin Hinjawadi?")
 
     assert result.project == "Yashwin Hinjawadi"
@@ -149,12 +149,7 @@ async def test_project_extraction(parser):
 @pytest.mark.asyncio
 async def test_fallback_on_llm_error(parser):
     """When the LLM call fails, parser should return a low-confidence METRIC_QUERY fallback."""
-    mock_client = AsyncMock()
-    mock_client.post.side_effect = Exception("connection refused")
-    mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-    mock_client.__aexit__ = AsyncMock(return_value=False)
-
-    with patch("backend.intelligence.query_parser.httpx.AsyncClient", return_value=mock_client):
+    with _patch_llm_error():
         result = await parser.parse("How many bookings?")
 
     assert isinstance(result, ParsedQuery)
@@ -191,7 +186,7 @@ def test_parse_llm_response_with_filters(parser):
 async def test_conversation_history_updated_after_parse(parser):
     """parse() should append to conversation_history."""
     body = _make_llm_json(intent="METRIC_QUERY")
-    with patch("backend.intelligence.query_parser.httpx.AsyncClient", return_value=_mock_httpx_response(body)):
+    with _patch_llm(body):
         await parser.parse("How many bookings?")
 
     assert len(parser.conversation_history) == 1
