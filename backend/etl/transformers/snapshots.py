@@ -1,5 +1,10 @@
 """
 Snapshot Transformer — Generates daily funnel snapshots for trend analysis.
+
+Combines:
+- gold.fact_lead_pipeline (VJ Sales lead stages)
+- gold.fact_bookings (Farvision confirmed bookings)
+to produce a unified daily view per project.
 """
 
 import logging
@@ -21,6 +26,9 @@ class SnapshotTransformer:
         """
         Build or refresh the daily funnel snapshot for a given date.
         Defaults to today if no date provided.
+
+        Uses fact_lead_pipeline for inquiry/site_visit counts and
+        fact_bookings for confirmed booking/agreement/registration counts.
         """
         if snapshot_date is None:
             snapshot_date = date.today()
@@ -28,6 +36,30 @@ class SnapshotTransformer:
         date_key = int(snapshot_date.strftime("%Y%m%d"))
 
         query = text("""
+            WITH pipeline_counts AS (
+                SELECT
+                    p.project_key,
+                    COUNT(*) FILTER (WHERE f.pipeline_stage = 'inquiry') AS total_inquiries,
+                    COUNT(*) FILTER (WHERE f.pipeline_stage = 'site_visit') AS total_site_visits,
+                    COUNT(*) FILTER (
+                        WHERE f.pipeline_stage NOT IN ('cancelled', 'registered')
+                    ) AS total_active_leads
+                FROM gold.fact_lead_pipeline f
+                JOIN gold.dim_projects p ON f.project_key = p.project_key
+                WHERE f.event_date_key <= :date_key
+                GROUP BY p.project_key
+            ),
+            booking_counts AS (
+                SELECT
+                    b.project_key,
+                    COUNT(*) FILTER (WHERE NOT b.is_cancelled) AS total_bookings,
+                    COUNT(*) FILTER (WHERE b.agreement_date IS NOT NULL AND NOT b.is_cancelled) AS total_agreements,
+                    COUNT(*) FILTER (WHERE b.registration_date IS NOT NULL AND NOT b.is_cancelled) AS total_registered,
+                    COUNT(*) FILTER (WHERE b.is_cancelled) AS total_cancelled
+                FROM gold.fact_bookings b
+                WHERE b.booking_date <= (SELECT full_date FROM gold.dim_date WHERE date_key = :date_key)
+                GROUP BY b.project_key
+            )
             INSERT INTO gold.fact_daily_funnel_snapshot (
                 snapshot_date_key, project_key,
                 total_inquiries, total_site_visits, total_bookings,
@@ -38,36 +70,32 @@ class SnapshotTransformer:
             )
             SELECT
                 :date_key,
-                p.project_key,
-                COUNT(*) FILTER (WHERE f.pipeline_stage = 'inquiry') AS total_inquiries,
-                COUNT(*) FILTER (WHERE f.pipeline_stage = 'site_visit') AS total_site_visits,
-                COUNT(*) FILTER (WHERE f.pipeline_stage = 'booking') AS total_bookings,
-                COUNT(*) FILTER (WHERE f.pipeline_stage = 'agreement') AS total_agreements,
-                COUNT(*) FILTER (WHERE f.pipeline_stage = 'registered') AS total_registered,
-                COUNT(*) FILTER (WHERE f.pipeline_stage = 'cancelled') AS total_cancelled,
-                COUNT(*) FILTER (
-                    WHERE f.pipeline_stage NOT IN ('cancelled', 'registered')
-                ) AS total_active_leads,
+                COALESCE(pc.project_key, bc.project_key),
+                COALESCE(pc.total_inquiries, 0),
+                COALESCE(pc.total_site_visits, 0),
+                COALESCE(bc.total_bookings, 0),
+                COALESCE(bc.total_agreements, 0),
+                COALESCE(bc.total_registered, 0),
+                COALESCE(bc.total_cancelled, 0),
+                COALESCE(pc.total_active_leads, 0),
                 -- Conversion rates
                 ROUND(
-                    COUNT(*) FILTER (WHERE f.pipeline_stage = 'site_visit') * 100.0 /
-                    NULLIF(COUNT(*) FILTER (WHERE f.pipeline_stage = 'inquiry'), 0),
+                    COALESCE(pc.total_site_visits, 0) * 100.0 /
+                    NULLIF(COALESCE(pc.total_inquiries, 0), 0),
                     2
                 ),
                 ROUND(
-                    COUNT(*) FILTER (WHERE f.pipeline_stage = 'booking') * 100.0 /
-                    NULLIF(COUNT(*) FILTER (WHERE f.pipeline_stage = 'site_visit'), 0),
+                    COALESCE(bc.total_bookings, 0) * 100.0 /
+                    NULLIF(COALESCE(pc.total_site_visits, 0), 0),
                     2
                 ),
                 ROUND(
-                    COUNT(*) FILTER (WHERE f.pipeline_stage = 'agreement') * 100.0 /
-                    NULLIF(COUNT(*) FILTER (WHERE f.pipeline_stage = 'booking'), 0),
+                    COALESCE(bc.total_agreements, 0) * 100.0 /
+                    NULLIF(COALESCE(bc.total_bookings, 0), 0),
                     2
                 )
-            FROM gold.fact_lead_pipeline f
-            JOIN gold.dim_projects p ON f.project_key = p.project_key
-            WHERE f.event_date_key <= :date_key
-            GROUP BY p.project_key
+            FROM pipeline_counts pc
+            FULL OUTER JOIN booking_counts bc ON pc.project_key = bc.project_key
             ON CONFLICT (snapshot_date_key, project_key) DO UPDATE
                 SET total_inquiries = EXCLUDED.total_inquiries,
                     total_site_visits = EXCLUDED.total_site_visits,

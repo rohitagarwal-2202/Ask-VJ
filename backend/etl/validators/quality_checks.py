@@ -2,10 +2,11 @@
 Data Quality Checks — Validates gold layer data after each ETL run.
 
 Checks:
-1. Row count consistency (gold vs bronze)
+1. Orphan record detection (facts without dimensions)
 2. Null checks on critical fields
-3. Orphan record detection (facts without dimensions)
-4. Business rule validation (e.g., collection_efficiency in valid range)
+3. Negative/invalid amount detection
+4. Entity resolution coverage
+5. Booking data completeness
 """
 
 import logging
@@ -36,11 +37,14 @@ class QualityChecker:
         results = []
 
         with self.engine.connect() as conn:
-            results.append(self._check_orphan_facts(conn))
+            results.append(self._check_orphan_pipeline_facts(conn))
+            results.append(self._check_orphan_booking_facts(conn))
             results.append(self._check_null_customer_names(conn))
             results.append(self._check_null_dates(conn))
-            results.append(self._check_negative_amounts(conn))
+            results.append(self._check_negative_receipt_amounts(conn))
+            results.append(self._check_negative_outstanding(conn))
             results.append(self._check_entity_resolution_coverage(conn))
+            results.append(self._check_booking_completeness(conn))
 
         # Log summary
         errors = [r for r in results if not r.passed and r.severity == "error"]
@@ -58,8 +62,8 @@ class QualityChecker:
 
         return results
 
-    def _check_orphan_facts(self, conn) -> QualityCheckResult:
-        """Check for fact records that reference non-existent dimension keys."""
+    def _check_orphan_pipeline_facts(self, conn) -> QualityCheckResult:
+        """Check for pipeline records referencing non-existent customers."""
         result = conn.execute(text("""
             SELECT COUNT(*) FROM gold.fact_lead_pipeline
             WHERE customer_key IS NOT NULL
@@ -69,18 +73,45 @@ class QualityChecker:
 
         if orphan_count > 0:
             return QualityCheckResult(
-                "orphan_fact_records",
+                "orphan_pipeline_records",
                 False,
                 f"{orphan_count} pipeline records reference non-existent customers",
                 "error",
             )
-        return QualityCheckResult("orphan_fact_records", True, "No orphan records", "info")
+        return QualityCheckResult("orphan_pipeline_records", True, "No orphan pipeline records", "info")
+
+    def _check_orphan_booking_facts(self, conn) -> QualityCheckResult:
+        """Check for booking records referencing non-existent dimensions."""
+        result = conn.execute(text("""
+            SELECT
+                SUM(CASE WHEN b.project_key IS NOT NULL
+                    AND b.project_key NOT IN (SELECT project_key FROM gold.dim_projects)
+                    THEN 1 ELSE 0 END) AS orphan_projects,
+                SUM(CASE WHEN b.unit_key IS NOT NULL
+                    AND b.unit_key NOT IN (SELECT unit_key FROM gold.dim_units)
+                    THEN 1 ELSE 0 END) AS orphan_units
+            FROM gold.fact_bookings b
+        """))
+        row = result.fetchone()
+        orphan_projects = row[0] or 0
+        orphan_units = row[1] or 0
+        total_orphans = orphan_projects + orphan_units
+
+        if total_orphans > 0:
+            return QualityCheckResult(
+                "orphan_booking_records",
+                False,
+                f"{orphan_projects} orphan project refs, {orphan_units} orphan unit refs in fact_bookings",
+                "error",
+            )
+        return QualityCheckResult("orphan_booking_records", True, "No orphan booking records", "info")
 
     def _check_null_customer_names(self, conn) -> QualityCheckResult:
         """Check for customers without names."""
         result = conn.execute(text("""
             SELECT COUNT(*) FROM gold.dim_customers
-            WHERE customer_name IS NULL OR customer_name = ''
+            WHERE (customer_name IS NULL OR customer_name = '')
+              AND (full_name IS NULL OR full_name = '')
         """))
         null_count = result.scalar()
 
@@ -88,7 +119,7 @@ class QualityChecker:
             return QualityCheckResult(
                 "null_customer_names",
                 False,
-                f"{null_count} customers have no name",
+                f"{null_count} customers have no name (neither customer_name nor full_name)",
                 "warning",
             )
         return QualityCheckResult("null_customer_names", True, "All customers have names", "info")
@@ -111,28 +142,45 @@ class QualityChecker:
             )
         return QualityCheckResult("null_event_dates", True, "All events have valid dates", "info")
 
-    def _check_negative_amounts(self, conn) -> QualityCheckResult:
-        """Check for negative amounts in collections."""
+    def _check_negative_receipt_amounts(self, conn) -> QualityCheckResult:
+        """Check for negative amounts in receipts."""
         result = conn.execute(text("""
-            SELECT COUNT(*) FROM gold.fact_collections WHERE amount < 0
+            SELECT COUNT(*) FROM gold.fact_receipts WHERE amount < 0
         """))
         neg_count = result.scalar()
 
         if neg_count > 0:
             return QualityCheckResult(
-                "negative_amounts",
+                "negative_receipt_amounts",
                 False,
-                f"{neg_count} collection records have negative amounts",
+                f"{neg_count} receipt records have negative amounts",
                 "warning",
             )
-        return QualityCheckResult("negative_amounts", True, "No negative amounts", "info")
+        return QualityCheckResult("negative_receipt_amounts", True, "No negative receipt amounts", "info")
+
+    def _check_negative_outstanding(self, conn) -> QualityCheckResult:
+        """Check for negative due amounts in outstanding (should not happen)."""
+        result = conn.execute(text("""
+            SELECT COUNT(*) FROM gold.fact_outstanding WHERE due_amount < 0
+        """))
+        neg_count = result.scalar()
+
+        if neg_count > 0:
+            return QualityCheckResult(
+                "negative_outstanding",
+                False,
+                f"{neg_count} outstanding records have negative due amounts",
+                "warning",
+            )
+        return QualityCheckResult("negative_outstanding", True, "No negative outstanding amounts", "info")
 
     def _check_entity_resolution_coverage(self, conn) -> QualityCheckResult:
-        """Check what percentage of VJ Sales leads have been resolved."""
+        """Check what percentage of Farvision bookings have been resolved via entity_map."""
         result = conn.execute(text("""
             SELECT
-                (SELECT COUNT(DISTINCT lead_id) FROM bronze.stg_vjsales_bookings) AS total_bookings,
-                (SELECT COUNT(*) FROM silver.entity_map WHERE vjsales_lead_id IS NOT NULL) AS resolved
+                (SELECT COUNT(*) FROM gold.fact_bookings) AS total_bookings,
+                (SELECT COUNT(*) FROM silver.entity_map
+                 WHERE farvision_booking_id IS NOT NULL) AS resolved
         """))
         row = result.fetchone()
         total = row[0] or 0
@@ -155,5 +203,44 @@ class QualityChecker:
             "entity_resolution_coverage",
             True,
             f"{coverage:.1f}% of bookings resolved ({resolved}/{total})",
+            "info",
+        )
+
+    def _check_booking_completeness(self, conn) -> QualityCheckResult:
+        """Check that bookings have essential fields populated."""
+        result = conn.execute(text("""
+            SELECT
+                COUNT(*) AS total,
+                SUM(CASE WHEN booking_date IS NULL THEN 1 ELSE 0 END) AS no_date,
+                SUM(CASE WHEN net_basic_price IS NULL OR net_basic_price = 0 THEN 1 ELSE 0 END) AS no_price,
+                SUM(CASE WHEN project_key IS NULL THEN 1 ELSE 0 END) AS no_project
+            FROM gold.fact_bookings
+            WHERE is_cancelled = false
+        """))
+        row = result.fetchone()
+        total = row[0] or 0
+        no_date = row[1] or 0
+        no_price = row[2] or 0
+        no_project = row[3] or 0
+
+        issues = []
+        if no_date > 0:
+            issues.append(f"{no_date} missing booking_date")
+        if no_price > 0:
+            issues.append(f"{no_price} missing net_basic_price")
+        if no_project > 0:
+            issues.append(f"{no_project} missing project_key")
+
+        if issues:
+            return QualityCheckResult(
+                "booking_completeness",
+                False,
+                f"Active bookings with missing fields: {', '.join(issues)} (of {total} total)",
+                "warning",
+            )
+        return QualityCheckResult(
+            "booking_completeness",
+            True,
+            f"All {total} active bookings have essential fields",
             "info",
         )
