@@ -10,18 +10,17 @@ sqlalchemy==2.0.36
 psycopg2-binary==2.9.10
 pyodbc==5.2.0
 
-# LLM integration
-langchain==0.3.14
-langchain-community==0.3.14
-langchain-ollama==0.3.0
-
-# Embeddings & Vector DB
-sentence-transformers==3.3.1
-chromadb==0.5.23
-
 # Authentication
 PyJWT==2.10.1
 
 # Utilities
 python-dotenv==1.0.1
 httpx==0.28.1
+
+# ── Optional: Local LLM / Embedding (only needed when LLM_PROVIDER=ollama) ──
+# Uncomment these when switching from Anthropic API to local Ollama:
+# langchain==0.3.14
+# langchain-community==0.3.14
+# langchain-ollama==0.3.0
+# sentence-transformers==3.3.1
+# chromadb==0.5.23
