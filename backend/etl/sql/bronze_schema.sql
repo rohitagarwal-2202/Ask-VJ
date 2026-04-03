@@ -488,17 +488,17 @@ CREATE TABLE IF NOT EXISTS bronze.stg_vj_projects (
     _source_system VARCHAR(20) DEFAULT 'vjsales',
     _batch_id      UUID,
 
-    projectId      UUID NOT NULL,
-    projectName    VARCHAR(255),
-    buId           INT,                  -- maps to Farvision BUId
-    reraNumber     VARCHAR(100),
-    isCompleted    BOOLEAN
+    "projectId"      UUID NOT NULL,
+    "projectName"    VARCHAR(255),
+    "buId"           INT,                  -- maps to Farvision BUId
+    "reraNumber"     VARCHAR(100),
+    "isCompleted"    BOOLEAN
 );
 
 CREATE INDEX IF NOT EXISTS idx_vj_projects_project_id
-    ON bronze.stg_vj_projects (projectId);
+    ON bronze.stg_vj_projects ("projectId");
 CREATE INDEX IF NOT EXISTS idx_vj_projects_bu_id
-    ON bronze.stg_vj_projects (buId);
+    ON bronze.stg_vj_projects ("buId");
 
 -- ============================================================
 -- "Wings"
@@ -509,15 +509,15 @@ CREATE TABLE IF NOT EXISTS bronze.stg_vj_wings (
     _source_system VARCHAR(20) DEFAULT 'vjsales',
     _batch_id      UUID,
 
-    wingId         UUID NOT NULL,
-    wingName       VARCHAR(255),
-    projectId      UUID
+    "wingId"         UUID NOT NULL,
+    "wingName"       VARCHAR(255),
+    "projectId"      UUID
 );
 
 CREATE INDEX IF NOT EXISTS idx_vj_wings_wing_id
-    ON bronze.stg_vj_wings (wingId);
+    ON bronze.stg_vj_wings ("wingId");
 CREATE INDEX IF NOT EXISTS idx_vj_wings_project_id
-    ON bronze.stg_vj_wings (projectId);
+    ON bronze.stg_vj_wings ("projectId");
 
 -- ============================================================
 -- "Inventory"
@@ -528,33 +528,33 @@ CREATE TABLE IF NOT EXISTS bronze.stg_vj_inventory (
     _source_system VARCHAR(20) DEFAULT 'vjsales',
     _batch_id      UUID,
 
-    unitId            UUID NOT NULL,
-    projectId         UUID,
-    wingId            UUID,
-    floorNo           INT,
-    unitNo            VARCHAR(50),
-    saleableArea      DECIMAL(12, 2),
-    chargeableArea    DECIMAL(12, 2),
-    inventoryStatusId INT,
-    inventoryTypeId   INT,
-    farvisionUnitId   INT,               -- cross-system join key
-    farvisionStatus   VARCHAR(50),
-    totalCost         DECIMAL(18, 2),
+    "unitId"            UUID NOT NULL,
+    "projectId"         UUID,
+    "wingId"            UUID,
+    "floorNo"           INT,
+    "unitNo"            VARCHAR(50),
+    "saleableArea"      DECIMAL(12, 2),
+    "chargeableArea"    DECIMAL(12, 2),
+    "inventoryStatusId" INT,
+    "inventoryTypeId"   INT,
+    "farvisionUnitId"   INT,               -- cross-system join key
+    "farvisionStatus"   VARCHAR(50),
+    "totalCost"         DECIMAL(18, 2),
     "BSP"               DECIMAL(18, 2),
-    displayUnitType   VARCHAR(50),
-    soldDate          BIGINT,            -- epoch ms
+    "displayUnitType"   VARCHAR(50),
+    "soldDate"          BIGINT,            -- epoch ms
     created_at        BIGINT,            -- epoch ms
-    leadId            UUID
+    "leadId"            UUID
 );
 
 CREATE INDEX IF NOT EXISTS idx_vj_inventory_unit_id
-    ON bronze.stg_vj_inventory (unitId);
+    ON bronze.stg_vj_inventory ("unitId");
 CREATE INDEX IF NOT EXISTS idx_vj_inventory_project_id
-    ON bronze.stg_vj_inventory (projectId);
+    ON bronze.stg_vj_inventory ("projectId");
 CREATE INDEX IF NOT EXISTS idx_vj_inventory_fv_unit_id
-    ON bronze.stg_vj_inventory (farvisionUnitId);
+    ON bronze.stg_vj_inventory ("farvisionUnitId");
 CREATE INDEX IF NOT EXISTS idx_vj_inventory_lead_id
-    ON bronze.stg_vj_inventory (leadId);
+    ON bronze.stg_vj_inventory ("leadId");
 
 -- ============================================================
 -- "InventoryType"
@@ -565,7 +565,7 @@ CREATE TABLE IF NOT EXISTS bronze.stg_vj_inventory_type (
     _source_system VARCHAR(20) DEFAULT 'vjsales',
     _batch_id      UUID,
 
-    inventoryTypeId INT NOT NULL,
+    "inventoryTypeId" INT NOT NULL,
     type            VARCHAR(100)
 );
 
@@ -578,7 +578,7 @@ CREATE TABLE IF NOT EXISTS bronze.stg_vj_inventory_status (
     _source_system VARCHAR(20) DEFAULT 'vjsales',
     _batch_id      UUID,
 
-    inventoryStatusId INT NOT NULL,
+    "inventoryStatusId" INT NOT NULL,
     status            VARCHAR(50)         -- Available / On Hold / Sold
 );
 
@@ -591,21 +591,21 @@ CREATE TABLE IF NOT EXISTS bronze.stg_vj_leads (
     _source_system VARCHAR(20) DEFAULT 'vjsales',
     _batch_id      UUID,
 
-    leadId         UUID NOT NULL,
-    personId       UUID,
-    userId         UUID,
-    cpId           UUID,
-    leadType       VARCHAR(100),
-    leadCategory   VARCHAR(100),
+    "leadId"         UUID NOT NULL,
+    "personId"       UUID,
+    "userId"         UUID,
+    "cpId"           UUID,
+    "leadType"       VARCHAR(100),
+    "leadCategory"   VARCHAR(100),
     created_at     BIGINT               -- epoch ms
 );
 
 CREATE INDEX IF NOT EXISTS idx_vj_leads_lead_id
-    ON bronze.stg_vj_leads (leadId);
+    ON bronze.stg_vj_leads ("leadId");
 CREATE INDEX IF NOT EXISTS idx_vj_leads_person_id
-    ON bronze.stg_vj_leads (personId);
+    ON bronze.stg_vj_leads ("personId");
 CREATE INDEX IF NOT EXISTS idx_vj_leads_cp_id
-    ON bronze.stg_vj_leads (cpId);
+    ON bronze.stg_vj_leads ("cpId");
 
 -- ============================================================
 -- "Person"
@@ -616,15 +616,15 @@ CREATE TABLE IF NOT EXISTS bronze.stg_vj_person (
     _source_system VARCHAR(20) DEFAULT 'vjsales',
     _batch_id      UUID,
 
-    personId       UUID NOT NULL,
+    "personId"       UUID NOT NULL,
     name           VARCHAR(255),
-    contactNumber  VARCHAR(50),
+    "contactNumber"  VARCHAR(50),
     email          VARCHAR(255),
     gender         VARCHAR(20)
 );
 
 CREATE INDEX IF NOT EXISTS idx_vj_person_person_id
-    ON bronze.stg_vj_person (personId);
+    ON bronze.stg_vj_person ("personId");
 
 -- ============================================================
 -- "LeadStatus"
@@ -635,14 +635,14 @@ CREATE TABLE IF NOT EXISTS bronze.stg_vj_lead_status (
     _source_system VARCHAR(20) DEFAULT 'vjsales',
     _batch_id      UUID,
 
-    leadStatusId   INT NOT NULL,
-    leadId         UUID,
+    "leadStatusId"   INT NOT NULL,
+    "leadId"         UUID,
     status         VARCHAR(100),
     created_at     BIGINT               -- epoch ms
 );
 
 CREATE INDEX IF NOT EXISTS idx_vj_lead_status_lead_id
-    ON bronze.stg_vj_lead_status (leadId);
+    ON bronze.stg_vj_lead_status ("leadId");
 
 -- ============================================================
 -- "SiteVisits"
@@ -653,22 +653,22 @@ CREATE TABLE IF NOT EXISTS bronze.stg_vj_site_visits (
     _source_system VARCHAR(20) DEFAULT 'vjsales',
     _batch_id      UUID,
 
-    siteVisitId    INT NOT NULL,
-    projectId      UUID,
-    leadId         UUID,
-    cpId           UUID,
-    userId         UUID,
-    inventoryTypeId INT,
-    dateTime       BIGINT,              -- epoch ms
+    "siteVisitId"    INT NOT NULL,
+    "projectId"      UUID,
+    "leadId"         UUID,
+    "cpId"           UUID,
+    "userId"         UUID,
+    "inventoryTypeId" INT,
+    "dateTime"       BIGINT,              -- epoch ms
     remarks        TEXT,
     mode           VARCHAR(100),
     created_at     BIGINT               -- epoch ms
 );
 
 CREATE INDEX IF NOT EXISTS idx_vj_site_visits_lead_id
-    ON bronze.stg_vj_site_visits (leadId);
+    ON bronze.stg_vj_site_visits ("leadId");
 CREATE INDEX IF NOT EXISTS idx_vj_site_visits_project_id
-    ON bronze.stg_vj_site_visits (projectId);
+    ON bronze.stg_vj_site_visits ("projectId");
 
 -- ============================================================
 -- "AllotmentPayment"
@@ -679,28 +679,28 @@ CREATE TABLE IF NOT EXISTS bronze.stg_vj_allotment_payment (
     _source_system VARCHAR(20) DEFAULT 'vjsales',
     _batch_id      UUID,
 
-    allotmentPaymentId UUID NOT NULL,
-    unitId             UUID,
-    leadId             UUID,
+    "allotmentPaymentId" UUID NOT NULL,
+    "unitId"             UUID,
+    "leadId"             UUID,
     status             VARCHAR(100),
-    paidAmount         DECIMAL(18, 2),
-    bookingId          INT,              -- maps to Farvision BookingId
-    applicationNo      VARCHAR(100),
-    bookingAmt         JSONB,            -- preserved as JSONB from source
-    unitCost           JSONB,            -- preserved as JSONB from source
-    agreementNo        VARCHAR(100),
-    agreementDate      DATE,
+    "paidAmount"         DECIMAL(18, 2),
+    "bookingId"          INT,              -- maps to Farvision BookingId
+    "applicationNo"      VARCHAR(100),
+    "bookingAmt"         JSONB,            -- preserved as JSONB from source
+    "unitCost"           JSONB,            -- preserved as JSONB from source
+    "agreementNo"        VARCHAR(100),
+    "agreementDate"      DATE,
     created_at         BIGINT            -- epoch ms
 );
 
 CREATE INDEX IF NOT EXISTS idx_vj_allotment_pmt_id
-    ON bronze.stg_vj_allotment_payment (allotmentPaymentId);
+    ON bronze.stg_vj_allotment_payment ("allotmentPaymentId");
 CREATE INDEX IF NOT EXISTS idx_vj_allotment_pmt_lead_id
-    ON bronze.stg_vj_allotment_payment (leadId);
+    ON bronze.stg_vj_allotment_payment ("leadId");
 CREATE INDEX IF NOT EXISTS idx_vj_allotment_pmt_unit_id
-    ON bronze.stg_vj_allotment_payment (unitId);
+    ON bronze.stg_vj_allotment_payment ("unitId");
 CREATE INDEX IF NOT EXISTS idx_vj_allotment_pmt_booking_id
-    ON bronze.stg_vj_allotment_payment (bookingId);
+    ON bronze.stg_vj_allotment_payment ("bookingId");
 
 -- ============================================================
 -- "AllotmentTransactions"
@@ -711,20 +711,20 @@ CREATE TABLE IF NOT EXISTS bronze.stg_vj_allotment_transactions (
     _source_system VARCHAR(20) DEFAULT 'vjsales',
     _batch_id      UUID,
 
-    transactionId       INT NOT NULL,
-    allotmentPaymentId  UUID,
+    "transactionId"       INT NOT NULL,
+    "allotmentPaymentId"  UUID,
     amount              DECIMAL(18, 2),
-    modeOfPayment       VARCHAR(100),
+    "modeOfPayment"       VARCHAR(100),
     status              VARCHAR(100),
-    unitId              UUID,
-    leadId              UUID,
+    "unitId"              UUID,
+    "leadId"              UUID,
     created_at          BIGINT           -- epoch ms
 );
 
 CREATE INDEX IF NOT EXISTS idx_vj_allotment_txn_allotment_id
-    ON bronze.stg_vj_allotment_transactions (allotmentPaymentId);
+    ON bronze.stg_vj_allotment_transactions ("allotmentPaymentId");
 CREATE INDEX IF NOT EXISTS idx_vj_allotment_txn_lead_id
-    ON bronze.stg_vj_allotment_transactions (leadId);
+    ON bronze.stg_vj_allotment_transactions ("leadId");
 
 -- ============================================================
 -- "CP" (Channel Partners)
@@ -735,17 +735,17 @@ CREATE TABLE IF NOT EXISTS bronze.stg_vj_cp (
     _source_system VARCHAR(20) DEFAULT 'vjsales',
     _batch_id      UUID,
 
-    cpId           UUID NOT NULL,
+    "cpId"           UUID NOT NULL,
     name           VARCHAR(255),
-    contactNumber  VARCHAR(50),
-    companyName    VARCHAR(255),
-    cpType         VARCHAR(100),
-    approvalStatus VARCHAR(50),
-    reraNo         VARCHAR(100)
+    "contactNumber"  VARCHAR(50),
+    "companyName"    VARCHAR(255),
+    "cpType"         VARCHAR(100),
+    "approvalStatus" VARCHAR(50),
+    "reraNo"         VARCHAR(100)
 );
 
 CREATE INDEX IF NOT EXISTS idx_vj_cp_cp_id
-    ON bronze.stg_vj_cp (cpId);
+    ON bronze.stg_vj_cp ("cpId");
 
 -- ============================================================
 -- "Users"
@@ -756,15 +756,15 @@ CREATE TABLE IF NOT EXISTS bronze.stg_vj_users (
     _source_system VARCHAR(20) DEFAULT 'vjsales',
     _batch_id      UUID,
 
-    userId         UUID NOT NULL,
+    "userId"         UUID NOT NULL,
     name           VARCHAR(255),
-    roleId         INT,
+    "roleId"         INT,
     email          VARCHAR(255),
-    contactNumber  VARCHAR(50)
+    "contactNumber"  VARCHAR(50)
 );
 
 CREATE INDEX IF NOT EXISTS idx_vj_users_user_id
-    ON bronze.stg_vj_users (userId);
+    ON bronze.stg_vj_users ("userId");
 
 
 -- ############################################################
