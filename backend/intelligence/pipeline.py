@@ -14,6 +14,7 @@ from datetime import datetime
 
 from backend.config import AppConfig
 from backend.intelligence.query_parser import QueryParser, ParsedQuery, QueryIntent
+from backend.intelligence.clarification import ClarificationEngine
 from backend.intelligence.schema_retriever import SchemaRetriever
 from backend.intelligence.sql_generator import SQLGenerator
 from backend.intelligence.executor import SQLExecutor, QueryResult
@@ -45,6 +46,9 @@ class PipelineResult:
     intent: str                        # Classified intent
     sql_hash: str | None = None        # For debugging
     warnings: list[str] = field(default_factory=list)
+    needs_clarification: bool = False
+    clarification_id: str | None = None
+    clarification_options: list[dict] | None = None
 
 
 class IntelligencePipeline:
@@ -90,6 +94,41 @@ class IntelligencePipeline:
 
         if parsed.intent == QueryIntent.CLARIFICATION:
             return self._clarification_response(question, parsed, start)
+
+        # ── Clarification check ──
+        clarification_engine = ClarificationEngine(self.config.llm)
+        if user_id and clarification_engine.should_clarify(parsed, self.config.clarification_threshold):
+            # Need schema context for generating good options
+            schemas = await self.retriever.retrieve(question, parsed.metric)
+            schema_summary = self.retriever.format_schema_for_prompt(schemas)
+
+            options = await clarification_engine.generate_options(
+                question, parsed, schema_summary
+            )
+
+            if options:
+                from sqlalchemy import create_engine as _ce
+                engine = _ce(self.config.warehouse.connection_string)
+                cid = clarification_engine.store_session(
+                    engine, user_id, session_id or "", question, parsed, options
+                )
+                elapsed = int((datetime.now() - start).total_seconds() * 1000)
+                return PipelineResult(
+                    answer="I want to make sure I answer the right question.",
+                    confidence="low",
+                    confidence_score=parsed.confidence,
+                    data_sources=[],
+                    filters_applied={},
+                    last_sync=None,
+                    response_time_ms=elapsed,
+                    intent=parsed.intent.value,
+                    needs_clarification=True,
+                    clarification_id=cid,
+                    clarification_options=[
+                        {"label": o.label, "description": o.description, "refined_query": o.refined_query}
+                        for o in options
+                    ],
+                )
 
         # ── Guardrails: load user policies ──
         guardrails = DataGuardrails(self.config.warehouse.connection_string) if user_id else None
@@ -230,6 +269,17 @@ class IntelligencePipeline:
             sql_hash=hashlib.md5(sql.encode()).hexdigest()[:8],
             warnings=verification.warnings,
         )
+
+    async def ask_with_clarification(
+        self, clarification_id: str, option_index: int, user_id: int
+    ) -> PipelineResult:
+        """Run the pipeline with a clarified query from a previous clarification session."""
+        from sqlalchemy import create_engine as _ce
+        engine = _ce(self.config.warehouse.connection_string)
+        ce = ClarificationEngine(self.config.llm)
+        option = ce.resolve_session(engine, clarification_id, option_index)
+        # Run with the refined query at high confidence
+        return await self.ask(option.refined_query, user_id=user_id)
 
     def _access_denied_response(self, reason: str, start: datetime) -> PipelineResult:
         """Handle queries blocked by data guardrails."""

@@ -44,13 +44,32 @@ export function useChat() {
 
       const data: QueryResponse = await res.json();
 
-      setMessages((prev) =>
-        prev.map((m) =>
-          m.id === assistantId
-            ? { ...m, content: data.answer, response: data, isLoading: false }
-            : m,
-        ),
-      );
+      if (data.type === "clarification" && data.clarification_id && data.clarification_options) {
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === assistantId
+              ? {
+                  ...m,
+                  content: data.answer,
+                  response: data,
+                  isLoading: false,
+                  clarification: {
+                    clarification_id: data.clarification_id!,
+                    options: data.clarification_options!,
+                  },
+                }
+              : m,
+          ),
+        );
+      } else {
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === assistantId
+              ? { ...m, content: data.answer, response: data, isLoading: false }
+              : m,
+          ),
+        );
+      }
     } catch (err) {
       setMessages((prev) =>
         prev.map((m) =>
@@ -69,10 +88,74 @@ export function useChat() {
     }
   }, []);
 
+  const selectClarification = useCallback(
+    async (clarificationId: string, optionIndex: number) => {
+      setIsLoading(true);
+
+      // Find the clarification message and add a loading indicator after it
+      const resolveId = generateId();
+      const loadingMessage: Message = {
+        id: resolveId,
+        role: "assistant",
+        content: "",
+        timestamp: new Date(),
+        isLoading: true,
+      };
+
+      setMessages((prev) => {
+        // Remove the clarification from the original message and append loading
+        const updated = prev.map((m) =>
+          m.clarification?.clarification_id === clarificationId
+            ? { ...m, clarification: undefined }
+            : m,
+        );
+        return [...updated, loadingMessage];
+      });
+
+      try {
+        const res = await apiFetch("/clarify", {
+          method: "POST",
+          body: JSON.stringify({
+            clarification_id: clarificationId,
+            option_index: optionIndex,
+          }),
+        });
+
+        if (!res.ok) throw new Error(`Server error: ${res.status}`);
+
+        const data: QueryResponse = await res.json();
+
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === resolveId
+              ? { ...m, content: data.answer, response: data, isLoading: false }
+              : m,
+          ),
+        );
+      } catch {
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === resolveId
+              ? {
+                  ...m,
+                  content: "Something went wrong. Please try again.",
+                  isLoading: false,
+                  isError: true,
+                }
+              : m,
+          ),
+        );
+      } finally {
+        setIsLoading(false);
+      }
+    },
+    [],
+  );
+
   const clearChat = useCallback(() => {
     setMessages([]);
     sessionId.current = generateId();
   }, []);
 
-  return { messages, isLoading, sendMessage, clearChat };
+  return { messages, isLoading, sendMessage, clearChat, selectClarification };
 }

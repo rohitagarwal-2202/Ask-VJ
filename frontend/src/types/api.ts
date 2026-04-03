@@ -3,6 +3,12 @@ export interface QueryRequest {
   session_id?: string;
 }
 
+export interface ClarificationOption {
+  label: string;
+  description: string;
+  refined_query: string;
+}
+
 export interface QueryResponse {
   answer: string;
   confidence: "high" | "medium" | "low";
@@ -13,6 +19,9 @@ export interface QueryResponse {
   last_sync: string | null;
   response_time_ms: number;
   warnings: string[];
+  type?: "answer" | "clarification";
+  clarification_id?: string;
+  clarification_options?: ClarificationOption[];
 }
 
 export interface HealthResponse {
@@ -30,6 +39,10 @@ export interface Message {
   response?: QueryResponse;
   isLoading?: boolean;
   isError?: boolean;
+  clarification?: {
+    clarification_id: string;
+    options: ClarificationOption[];
+  };
 }
 
 // Auth types

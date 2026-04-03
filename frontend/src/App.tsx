@@ -15,7 +15,7 @@ function LoadingSpinner() {
 
 export default function App() {
   const { user, isAuthenticated, isLoading: authLoading, requestOtp, verifyOtp, logout } = useAuth();
-  const { messages, isLoading, sendMessage, clearChat } = useChat();
+  const { messages, isLoading, sendMessage, clearChat, selectClarification } = useChat();
   const health = useHealth();
 
   if (authLoading) {
@@ -38,6 +38,7 @@ export default function App() {
         messages={messages}
         isLoading={isLoading}
         onSendMessage={sendMessage}
+        onSelectClarification={selectClarification}
       />
     </div>
   );

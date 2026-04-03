@@ -1,8 +1,11 @@
 import { useState } from "react";
 import type { Message } from "../types/api";
+import ClarificationCard from "./ClarificationCard";
 
 interface MessageBubbleProps {
   message: Message;
+  onSelectClarification?: (id: string, index: number) => void;
+  isClarificationDisabled?: boolean;
 }
 
 function TypingDots() {
@@ -129,7 +132,11 @@ function MetadataBar({ message }: { message: Message }) {
   );
 }
 
-export default function MessageBubble({ message }: MessageBubbleProps) {
+export default function MessageBubble({
+  message,
+  onSelectClarification,
+  isClarificationDisabled = false,
+}: MessageBubbleProps) {
   const isUser = message.role === "user";
 
   if (isUser) {
@@ -153,6 +160,13 @@ export default function MessageBubble({ message }: MessageBubbleProps) {
       >
         {message.isLoading ? (
           <TypingDots />
+        ) : message.clarification ? (
+          <ClarificationCard
+            clarificationId={message.clarification.clarification_id}
+            options={message.clarification.options}
+            onSelect={onSelectClarification ?? (() => {})}
+            disabled={isClarificationDisabled}
+          />
         ) : (
           <>
             <div className="flex items-start gap-2">

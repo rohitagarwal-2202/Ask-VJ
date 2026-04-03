@@ -6,6 +6,7 @@ interface ChatWindowProps {
   messages: Message[];
   isLoading: boolean;
   onSendMessage: (q: string) => void;
+  onSelectClarification?: (id: string, index: number) => void;
 }
 
 const SUGGESTIONS = [
@@ -44,13 +45,18 @@ export default function ChatWindow({
   messages,
   isLoading,
   onSendMessage,
+  onSelectClarification,
 }: ChatWindowProps) {
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       {messages.length === 0 ? (
         <EmptyState onSend={onSendMessage} />
       ) : (
-        <MessageList messages={messages} />
+        <MessageList
+          messages={messages}
+          onSelectClarification={onSelectClarification}
+          isLoading={isLoading}
+        />
       )}
       <ChatInput onSend={onSendMessage} disabled={isLoading} />
     </div>

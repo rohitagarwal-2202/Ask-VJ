@@ -50,6 +50,9 @@ class QueryResponse(BaseModel):
     last_sync: str | None
     response_time_ms: int
     warnings: list[str] = []
+    type: str = "answer"                             # "answer" or "clarification"
+    clarification_id: str | None = None
+    clarification_options: list[dict] | None = None
 
 
 class HealthResponse(BaseModel):
@@ -127,6 +130,76 @@ async def query(body: QueryRequest, user: UserInfo = Depends(get_current_user)):
         logger.exception("Pipeline error for question: %s", body.question)
         return QueryResponse(
             answer=f"An error occurred while processing your question. Please try again.",
+            confidence="low",
+            confidence_score=0.0,
+            data_sources=[],
+            filters_applied={},
+            intent="error",
+            last_sync=None,
+            response_time_ms=0,
+            warnings=[str(e)],
+        )
+
+    if result.needs_clarification:
+        return QueryResponse(
+            answer=result.answer,
+            type="clarification",
+            clarification_id=result.clarification_id,
+            clarification_options=result.clarification_options,
+            confidence=result.confidence,
+            confidence_score=result.confidence_score,
+            data_sources=result.data_sources,
+            filters_applied=result.filters_applied,
+            intent=result.intent,
+            last_sync=result.last_sync,
+            response_time_ms=result.response_time_ms,
+            warnings=result.warnings,
+        )
+
+    return QueryResponse(
+        answer=result.answer,
+        confidence=result.confidence,
+        confidence_score=result.confidence_score,
+        data_sources=result.data_sources,
+        filters_applied=result.filters_applied,
+        intent=result.intent,
+        last_sync=result.last_sync,
+        response_time_ms=result.response_time_ms,
+        warnings=result.warnings,
+    )
+
+
+class ClarificationChoice(BaseModel):
+    clarification_id: str
+    option_index: int
+
+
+@router.post("/clarify", response_model=QueryResponse)
+async def resolve_clarification(body: ClarificationChoice, user: UserInfo = Depends(get_current_user)):
+    """Resolve a pending clarification by selecting one of the presented options."""
+    pipeline = _get_pipeline()
+
+    try:
+        result = await pipeline.ask_with_clarification(
+            body.clarification_id, body.option_index, user.user_id
+        )
+    except ValueError as e:
+        logger.warning("Clarification resolution failed: %s", e)
+        return QueryResponse(
+            answer=f"Could not resolve clarification: {e}",
+            confidence="low",
+            confidence_score=0.0,
+            data_sources=[],
+            filters_applied={},
+            intent="error",
+            last_sync=None,
+            response_time_ms=0,
+            warnings=[str(e)],
+        )
+    except Exception as e:
+        logger.exception("Pipeline error during clarification resolution")
+        return QueryResponse(
+            answer="An error occurred while processing your clarified question. Please try again.",
             confidence="low",
             confidence_score=0.0,
             data_sources=[],
