@@ -8,9 +8,26 @@ export function useAuth() {
 
   const isAuthenticated = user !== null;
 
-  // Validate existing token on mount
+  // Check if auth is enabled, then validate token
   useEffect(() => {
     async function checkAuth() {
+      // Check if auth is disabled (local dev mode)
+      try {
+        const statusRes = await fetch("/api/auth-status");
+        if (statusRes.ok) {
+          const { auth_enabled } = await statusRes.json();
+          if (!auth_enabled) {
+            // Auth disabled — auto-login as local user
+            setUser({ user_id: 0, phone: "", display_name: "Local User", role: "admin" });
+            setIsLoading(false);
+            return;
+          }
+        }
+      } catch {
+        // If auth-status fails, assume auth is enabled
+      }
+
+      // Auth is enabled — validate existing token
       const token = getToken();
       if (!token) {
         setIsLoading(false);

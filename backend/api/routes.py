@@ -75,6 +75,13 @@ class FeedbackRequest(BaseModel):
 # ── Endpoints ──
 
 
+@router.get("/auth-status")
+async def auth_status():
+    """Returns whether auth is enabled. Frontend uses this to skip login."""
+    config = load_config()
+    return {"auth_enabled": config.auth_enabled}
+
+
 @router.get("/health", response_model=HealthResponse)
 async def health_check():
     """System health check — all DB connections and LLM availability."""

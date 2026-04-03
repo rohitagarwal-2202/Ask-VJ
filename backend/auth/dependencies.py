@@ -16,13 +16,21 @@ from backend.auth.models import UserInfo
 logger = logging.getLogger(__name__)
 
 
+_ANON_USER = UserInfo(user_id=0, phone="", display_name="Local User", role="admin")
+
+
 async def get_current_user(request: Request) -> UserInfo:
     """
     Extract Bearer token from the Authorization header, decode the JWT,
     validate the session in the database, and return a UserInfo object.
 
-    Raises HTTPException(401) on any failure.
+    When AUTH_ENABLED=false, returns a dummy admin user (for local dev).
+    Raises HTTPException(401) on any failure when auth is enabled.
     """
+    config = request.app.state.config
+    if not config.auth_enabled:
+        return _ANON_USER
+
     auth_header = request.headers.get("Authorization")
     if not auth_header or not auth_header.startswith("Bearer "):
         raise HTTPException(

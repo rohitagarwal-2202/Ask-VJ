@@ -139,6 +139,7 @@ class AppConfig:
     api_host: str = os.getenv("API_HOST", "0.0.0.0")
     api_port: int = int(os.getenv("API_PORT", "8000"))
     debug: bool = os.getenv("DEBUG", "true").lower() == "true"
+    auth_enabled: bool = os.getenv("AUTH_ENABLED", "false").lower() == "true"
 
     # Clarification threshold
     clarification_threshold: float = float(os.getenv("CLARIFICATION_THRESHOLD", "0.7"))
