@@ -53,7 +53,9 @@ export function useAuth() {
 
     if (!res.ok) {
       const body = await res.json().catch(() => null);
-      throw new Error(body?.detail ?? "Failed to send OTP");
+      const detail = body?.detail;
+      const msg = typeof detail === "string" ? detail : "Failed to send OTP";
+      throw new Error(msg);
     }
   }, []);
 
@@ -61,12 +63,14 @@ export function useAuth() {
     async (phone: string, otp: string): Promise<void> => {
       const res = await apiFetch("/auth/verify-otp", {
         method: "POST",
-        body: JSON.stringify({ phone, otp }),
+        body: JSON.stringify({ phone, otp_code: otp }),
       });
 
       if (!res.ok) {
         const body = await res.json().catch(() => null);
-        throw new Error(body?.detail ?? "Invalid OTP");
+        const detail = body?.detail;
+        const msg = typeof detail === "string" ? detail : "Invalid OTP";
+        throw new Error(msg);
       }
 
       const data: TokenResponse = await res.json();
