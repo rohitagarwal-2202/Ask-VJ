@@ -50,6 +50,7 @@ class QueryResponse(BaseModel):
     last_sync: str | None
     response_time_ms: int
     warnings: list[str] = []
+    sql_query: str | None = None                     # Generated SQL for debugging
     type: str = "answer"                             # "answer" or "clarification"
     clarification_id: str | None = None
     clarification_options: list[dict] | None = None
@@ -58,6 +59,9 @@ class QueryResponse(BaseModel):
 class HealthResponse(BaseModel):
     status: str
     warehouse: str
+    farvision: str
+    vjsales: str
+    vjop: str
     llm: str
     version: str
 
@@ -73,7 +77,7 @@ class FeedbackRequest(BaseModel):
 
 @router.get("/health", response_model=HealthResponse)
 async def health_check():
-    """System health check — warehouse connectivity and LLM availability."""
+    """System health check — all DB connections and LLM availability."""
     config = load_config()
 
     # Check warehouse
@@ -83,26 +87,49 @@ async def health_check():
         with engine.connect() as conn:
             conn.execute(text("SELECT 1"))
         warehouse_status = "connected"
+        engine.dispose()
     except Exception as e:
         warehouse_status = f"error: {e}"
+
+    # Check source databases
+    source_statuses = {"farvision": "not configured", "vjsales": "not configured", "vjop": "not configured"}
+    for source_db in config.source_databases:
+        try:
+            engine = create_engine(source_db.connection_string)
+            with engine.connect() as conn:
+                conn.execute(text("SELECT 1"))
+            source_statuses[source_db.name] = "connected"
+            engine.dispose()
+        except Exception as e:
+            source_statuses[source_db.name] = f"error: {e}"
 
     # Check LLM
     llm_status = "unavailable"
     try:
-        async with httpx.AsyncClient(timeout=5) as client:
-            resp = await client.get(f"{config.llm.reasoning_endpoint}/api/tags")
-            if resp.status_code == 200:
-                llm_status = "ready"
+        if config.llm.provider == "anthropic" and config.llm.anthropic_api_key:
+            llm_status = "ready (anthropic)"
+        else:
+            async with httpx.AsyncClient(timeout=5) as client:
+                resp = await client.get(f"{config.llm.reasoning_endpoint}/api/tags")
+                if resp.status_code == 200:
+                    llm_status = "ready (ollama)"
     except Exception:
         llm_status = "unavailable"
 
-    overall = "ok" if warehouse_status == "connected" and llm_status == "ready" else "degraded"
+    all_connected = (
+        warehouse_status == "connected"
+        and llm_status.startswith("ready")
+    )
+    overall = "ok" if all_connected else "degraded"
 
     return HealthResponse(
         status=overall,
         warehouse=warehouse_status,
+        farvision=source_statuses["farvision"],
+        vjsales=source_statuses["vjsales"],
+        vjop=source_statuses["vjop"],
         llm=llm_status,
-        version="0.2.0",
+        version="1.0.0",
     )
 
 
@@ -165,6 +192,7 @@ async def query(body: QueryRequest, user: UserInfo = Depends(get_current_user)):
         intent=result.intent,
         last_sync=result.last_sync,
         response_time_ms=result.response_time_ms,
+        sql_query=result.sql_query,
         warnings=result.warnings,
     )
 

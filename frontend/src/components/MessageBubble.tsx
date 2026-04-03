@@ -78,6 +78,53 @@ function ConfidenceBadge({ level }: { level: "high" | "medium" | "low" }) {
   );
 }
 
+function ConfidencePill({
+  level,
+  score,
+}: {
+  level: "high" | "medium" | "low";
+  score: number;
+}) {
+  const styles = {
+    high: "bg-green-50 text-green-700 border-green-200",
+    medium: "bg-yellow-50 text-yellow-700 border-yellow-200",
+    low: "bg-red-50 text-red-700 border-red-200",
+  };
+  const pct = Math.round(score * 100);
+  return (
+    <span
+      className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-0.5 text-xs font-medium ${styles[level]}`}
+    >
+      <span
+        className={`h-1.5 w-1.5 rounded-full ${
+          level === "high"
+            ? "bg-green-500"
+            : level === "medium"
+              ? "bg-yellow-500"
+              : "bg-red-500"
+        }`}
+      />
+      {level.charAt(0).toUpperCase() + level.slice(1)} confidence ({pct}%)
+    </span>
+  );
+}
+
+function CopyButton({ text }: { text: string }) {
+  const [copied, setCopied] = useState(false);
+  return (
+    <button
+      onClick={() => {
+        navigator.clipboard.writeText(text);
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
+      }}
+      className="rounded bg-gray-200 px-2 py-0.5 text-[10px] font-medium text-gray-600 transition-colors hover:bg-gray-300"
+    >
+      {copied ? "Copied!" : "Copy"}
+    </button>
+  );
+}
+
 function MetadataBar({ message }: { message: Message }) {
   const [open, setOpen] = useState(false);
   const r = message.response;
@@ -116,6 +163,17 @@ function MetadataBar({ message }: { message: Message }) {
                 </span>
               ))}
             </span>
+          )}
+          {r.sql_query && (
+            <div className="w-full">
+              <div className="mb-1 flex items-center justify-between">
+                <span className="text-xs font-medium text-gray-500">SQL Query</span>
+                <CopyButton text={r.sql_query} />
+              </div>
+              <pre className="overflow-x-auto rounded bg-gray-900 p-2 text-[11px] leading-relaxed text-green-300">
+                {r.sql_query}
+              </pre>
+            </div>
           )}
           {r.warnings.length > 0 && (
             <div className="w-full">
@@ -173,6 +231,14 @@ export default function MessageBubble({
               {message.isError && <ErrorIcon />}
               <p className="whitespace-pre-wrap">{message.content}</p>
             </div>
+            {message.response && !message.isError && (
+              <div className="mt-2">
+                <ConfidencePill
+                  level={message.response.confidence}
+                  score={message.response.confidence_score}
+                />
+              </div>
+            )}
             <MetadataBar message={message} />
           </>
         )}

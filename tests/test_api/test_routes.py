@@ -33,6 +33,7 @@ def _mock_pipeline_result(**overrides):
         "last_sync": "2026-04-01T12:00:00Z",
         "response_time_ms": 340,
         "warnings": [],
+        "sql_query": "SELECT COUNT(*) FROM gold.fact_bookings;",
         "needs_clarification": False,
         "clarification_id": None,
         "clarification_options": None,

@@ -15,7 +15,7 @@ export function useHealth() {
         }
       } catch {
         if (mounted) {
-          setHealth({ status: "degraded", warehouse: "unreachable", llm: "unreachable", version: "?" });
+          setHealth({ status: "degraded", warehouse: "unreachable", farvision: "unreachable", vjsales: "unreachable", vjop: "unreachable", llm: "unreachable", version: "?" });
         }
       }
     }

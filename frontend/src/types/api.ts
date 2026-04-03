@@ -19,6 +19,7 @@ export interface QueryResponse {
   last_sync: string | null;
   response_time_ms: number;
   warnings: string[];
+  sql_query?: string;
   type?: "answer" | "clarification";
   clarification_id?: string;
   clarification_options?: ClarificationOption[];
@@ -27,6 +28,9 @@ export interface QueryResponse {
 export interface HealthResponse {
   status: "ok" | "degraded";
   warehouse: string;
+  farvision: string;
+  vjsales: string;
+  vjop: string;
   llm: string;
   version: string;
 }

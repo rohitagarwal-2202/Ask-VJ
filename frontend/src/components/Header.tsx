@@ -7,20 +7,60 @@ interface HeaderProps {
   onLogout: () => void;
 }
 
-function StatusDot({ health }: { health: HealthResponse | null }) {
-  const color = !health
-    ? "bg-yellow-400"
-    : health.status === "ok"
-      ? "bg-green-400"
+interface ServiceStatus {
+  label: string;
+  status: string;
+}
+
+function StatusDot({ label, status }: ServiceStatus) {
+  const isConnected = status === "connected" || status.startsWith("ready");
+  const isError = status.startsWith("error");
+  const color = isConnected
+    ? "bg-green-400"
+    : isError
+      ? "bg-red-400"
       : "bg-yellow-400";
 
   return (
-    <span className="relative flex h-2.5 w-2.5">
-      <span
-        className={`absolute inline-flex h-full w-full animate-ping rounded-full opacity-75 ${color}`}
-      />
-      <span className={`relative inline-flex h-2.5 w-2.5 rounded-full ${color}`} />
+    <span className="group relative flex h-2 w-2" title={`${label}: ${status}`}>
+      {isConnected && (
+        <span
+          className={`absolute inline-flex h-full w-full animate-ping rounded-full opacity-75 ${color}`}
+        />
+      )}
+      <span className={`relative inline-flex h-2 w-2 rounded-full ${color}`} />
+      <span className="pointer-events-none absolute bottom-full left-1/2 mb-2 -translate-x-1/2 whitespace-nowrap rounded bg-gray-900 px-2 py-1 text-[10px] text-white opacity-0 transition-opacity group-hover:opacity-100">
+        {label}: {status}
+      </span>
     </span>
+  );
+}
+
+function StatusBar({ health }: { health: HealthResponse | null }) {
+  if (!health) {
+    return (
+      <div className="flex items-center gap-1.5">
+        {["WH", "FV", "VJS", "VJOP", "LLM"].map((l) => (
+          <StatusDot key={l} label={l} status="checking..." />
+        ))}
+      </div>
+    );
+  }
+
+  const services: ServiceStatus[] = [
+    { label: "Warehouse", status: health.warehouse },
+    { label: "Farvision", status: health.farvision },
+    { label: "VJ Sales", status: health.vjsales },
+    { label: "VJOP", status: health.vjop },
+    { label: "LLM", status: health.llm },
+  ];
+
+  return (
+    <div className="flex items-center gap-1.5">
+      {services.map((s) => (
+        <StatusDot key={s.label} {...s} />
+      ))}
+    </div>
   );
 }
 
@@ -35,7 +75,7 @@ export default function Header({ health, onNewChat, user, onLogout }: HeaderProp
       </div>
 
       <div className="flex items-center gap-3 md:gap-4">
-        <StatusDot health={health} />
+        <StatusBar health={health} />
 
         {user && (
           <span className="hidden text-sm text-white/80 md:inline">

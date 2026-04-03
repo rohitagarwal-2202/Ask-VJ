@@ -44,7 +44,8 @@ class PipelineResult:
     last_sync: str | None              # Last ETL sync time
     response_time_ms: int              # Total pipeline latency
     intent: str                        # Classified intent
-    sql_hash: str | None = None        # For debugging
+    sql_query: str | None = None         # Generated SQL for debugging
+    sql_hash: str | None = None          # For debugging
     warnings: list[str] = field(default_factory=list)
     needs_clarification: bool = False
     clarification_id: str | None = None
@@ -266,6 +267,7 @@ class IntelligencePipeline:
             last_sync=last_sync.isoformat() if last_sync else None,
             response_time_ms=elapsed,
             intent=parsed.intent.value,
+            sql_query=sql,
             sql_hash=hashlib.md5(sql.encode()).hexdigest()[:8],
             warnings=verification.warnings,
         )
