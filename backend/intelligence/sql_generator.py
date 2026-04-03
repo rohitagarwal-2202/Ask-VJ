@@ -42,7 +42,7 @@ Generate a single SQL query to answer the user's question.
 - For INR amounts, do NOT format — return raw numbers
 - NEVER use DELETE, UPDATE, INSERT, DROP, ALTER, CREATE, TRUNCATE, GRANT, or EXECUTE
 - NEVER use subqueries in WHERE when a JOIN works
-- For "3 BHK" queries: use t.typology_id = 6 (base variant only, NOT 23/35 which are XL/XR)
+- For "3 BHK" queries: use t.is_base_variant = true AND t.display_name LIKE '3 BHK%' (NOT hardcoded IDs)
 - For active bookings: always filter is_cancelled = false
 - For unit status: 1 = sold, 2 = available, 3 = blocked
 
@@ -94,12 +94,13 @@ SELECT
   i.saleable_area,
   i.bsp AS rate_per_sqft,
   i.total_cost
-FROM gold.fact_inventory i
+FROM gold.snapshot_inventory i
 JOIN gold.dim_units u ON i.unit_key = u.unit_key
 JOIN gold.dim_projects p ON i.project_key = p.project_key
 JOIN gold.dim_typologies t ON i.typology_key = t.typology_key
 WHERE i.inventory_status = 'Available'
-  AND t.typology_id = 6
+  AND t.is_base_variant = true
+  AND t.display_name LIKE '3 BHK%'
 ORDER BY p.project_name, u.wing, u.floor
 LIMIT 1000;
 
@@ -137,7 +138,7 @@ SELECT
   SUM(o.day_amt_120) AS overdue_91_120,
   SUM(o.day_amt_180) AS overdue_121_180,
   SUM(o.day_amt_more_180) AS overdue_above_180
-FROM gold.fact_outstanding o
+FROM gold.snapshot_outstanding o
 JOIN gold.dim_projects p ON o.project_key = p.project_key
 GROUP BY p.project_name
 ORDER BY total_due DESC
@@ -154,7 +155,7 @@ SELECT
   o.due_amount,
   o.overdue_days,
   o.day_amt_90 + o.day_amt_120 + o.day_amt_180 + o.day_amt_more_180 AS overdue_above_90
-FROM gold.fact_outstanding o
+FROM gold.snapshot_outstanding o
 JOIN gold.dim_projects p ON o.project_key = p.project_key
 WHERE (o.day_amt_90 + o.day_amt_120 + o.day_amt_180 + o.day_amt_more_180) > 0
 ORDER BY overdue_above_90 DESC
@@ -200,7 +201,7 @@ SELECT
   COUNT(*) AS total_referrals,
   SUM(ref.points_earned) AS total_points_earned,
   SUM(ref.points_redeemed) AS total_points_redeemed
-FROM gold.fact_referrals ref
+FROM gold.snapshot_referrals ref
 JOIN gold.dim_customers c ON ref.referrer_customer_key = c.customer_key
 LEFT JOIN gold.dim_projects p ON ref.project_key = p.project_key
 GROUP BY c.customer_name, c.mobile, p.project_name

@@ -1,12 +1,15 @@
 """
-Data Quality Checks — Validates gold layer data after each ETL run.
+Data Quality Checks — Validates data at two stages:
 
-Checks:
-1. Orphan record detection (facts without dimensions)
-2. Null checks on critical fields
-3. Negative/invalid amount detection
-4. Entity resolution coverage
-5. Booking data completeness
+Pre-Gold checks (run after Silver, before Gold transforms):
+  - Entity resolution coverage
+  - Silver data structural integrity
+
+Post-Gold checks (run after Gold transforms):
+  - Orphan record detection (facts without dimensions)
+  - Null checks on critical fields
+  - Negative/invalid amount detection
+  - Booking data completeness
 """
 
 import logging
@@ -32,10 +35,17 @@ class QualityChecker:
     def __init__(self, warehouse_connection_string: str):
         self.engine: Engine = create_engine(warehouse_connection_string)
 
-    def run_all_checks(self) -> list[QualityCheckResult]:
-        """Run all quality checks and return results."""
+    def run_pre_gold_checks(self) -> list[QualityCheckResult]:
+        """Run checks on Silver data BEFORE Gold transforms. Errors here block Gold."""
         results = []
+        with self.engine.connect() as conn:
+            results.append(self._check_entity_resolution_coverage(conn))
+        self._log_summary("Pre-Gold", results)
+        return results
 
+    def run_post_gold_checks(self) -> list[QualityCheckResult]:
+        """Run checks on Gold data AFTER transforms. Errors logged but don't roll back."""
+        results = []
         with self.engine.connect() as conn:
             results.append(self._check_orphan_pipeline_facts(conn))
             results.append(self._check_orphan_booking_facts(conn))
@@ -43,24 +53,28 @@ class QualityChecker:
             results.append(self._check_null_dates(conn))
             results.append(self._check_negative_receipt_amounts(conn))
             results.append(self._check_negative_outstanding(conn))
-            results.append(self._check_entity_resolution_coverage(conn))
             results.append(self._check_booking_completeness(conn))
+        self._log_summary("Post-Gold", results)
+        return results
 
-        # Log summary
+    def run_all_checks(self) -> list[QualityCheckResult]:
+        """Run all checks (backward compat). Use pre/post methods for gated pipeline."""
+        return self.run_pre_gold_checks() + self.run_post_gold_checks()
+
+    @staticmethod
+    def _log_summary(phase: str, results: list["QualityCheckResult"]):
         errors = [r for r in results if not r.passed and r.severity == "error"]
         warnings = [r for r in results if not r.passed and r.severity == "warning"]
         passed = [r for r in results if r.passed]
 
         logger.info(
-            "Quality checks: %d passed, %d warnings, %d errors",
-            len(passed), len(warnings), len(errors),
+            "%s quality checks: %d passed, %d warnings, %d errors",
+            phase, len(passed), len(warnings), len(errors),
         )
         for error in errors:
             logger.error("QUALITY ERROR: %s — %s", error.check_name, error.message)
         for warning in warnings:
             logger.warning("QUALITY WARNING: %s — %s", warning.check_name, warning.message)
-
-        return results
 
     def _check_orphan_pipeline_facts(self, conn) -> QualityCheckResult:
         """Check for pipeline records referencing non-existent customers."""
@@ -161,7 +175,7 @@ class QualityChecker:
     def _check_negative_outstanding(self, conn) -> QualityCheckResult:
         """Check for negative due amounts in outstanding (should not happen)."""
         result = conn.execute(text("""
-            SELECT COUNT(*) FROM gold.fact_outstanding WHERE due_amount < 0
+            SELECT COUNT(*) FROM gold.snapshot_outstanding WHERE due_amount < 0
         """))
         neg_count = result.scalar()
 

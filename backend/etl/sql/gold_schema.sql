@@ -35,6 +35,10 @@ CREATE TABLE IF NOT EXISTS gold.dim_date (
     is_month_end BOOLEAN
 );
 
+COMMENT ON TABLE gold.dim_date IS
+    'Calendar dimension with Indian fiscal year support. Grain: one row per date. '
+    'Generated, not extracted. FiscalYearId: 56=FY2025-26, 52=FY2024-25. Owner: Platform.';
+
 -- ============================================================
 -- DIMENSION: Projects
 -- Source: Farvision DimProject / BusinessUnit mapping
@@ -55,6 +59,11 @@ CREATE TABLE IF NOT EXISTS gold.dim_projects (
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
+COMMENT ON TABLE gold.dim_projects IS
+    'VJ real estate projects. Grain: one row per project/phase. '
+    'bu_id = Farvision BusinessUnitId (universal project key). '
+    'Source: silver.project_crosswalk + Farvision ENGG.DimBusinessUnit. Owner: Operations.';
+
 CREATE INDEX IF NOT EXISTS idx_dim_projects_bu_id
     ON gold.dim_projects (bu_id);
 
@@ -72,6 +81,11 @@ CREATE TABLE IF NOT EXISTS gold.dim_typologies (
     display_name VARCHAR(50),              -- Human-friendly e.g. "3 BHK"
     is_base_variant BOOLEAN DEFAULT TRUE   -- true for base 3BHK, false for XL/XR variants
 );
+
+COMMENT ON TABLE gold.dim_typologies IS
+    'Unit type classification (1BHK, 2BHK, 3BHK, etc). Grain: one row per typology variant. '
+    'is_base_variant=true for base types, false for XL/XR variants. '
+    'For "3 BHK" queries use is_base_variant=true. Source: Farvision CRMG.DimTypologyMaster. Owner: Sales.';
 
 CREATE INDEX IF NOT EXISTS idx_dim_typologies_typology_id
     ON gold.dim_typologies (typology_id);
@@ -94,6 +108,10 @@ CREATE TABLE IF NOT EXISTS gold.dim_units (
     carpet_area DECIMAL(10, 2),
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
+
+COMMENT ON TABLE gold.dim_units IS
+    'Individual flats/shops/offices. Grain: one row per unit. unit_status: 1=sold, 2=available, 3=blocked. '
+    'Source: Farvision CRMG.DimUnitMaster + VJ Sales Inventory. Owner: Sales.';
 
 CREATE INDEX IF NOT EXISTS idx_dim_units_project
     ON gold.dim_units (project_key);
@@ -127,6 +145,10 @@ CREATE TABLE IF NOT EXISTS gold.dim_customers (
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
+COMMENT ON TABLE gold.dim_customers IS
+    'Unified customer records linked across systems via silver.entity_map. '
+    'Grain: one row per customer. Source: Farvision DimCustomerDetail + VJ Sales Person. Owner: Sales.';
+
 CREATE INDEX IF NOT EXISTS idx_dim_customers_unified
     ON gold.dim_customers (unified_customer_id);
 CREATE INDEX IF NOT EXISTS idx_dim_customers_farvision
@@ -147,6 +169,9 @@ CREATE TABLE IF NOT EXISTS gold.dim_sales_persons (
     is_active BOOLEAN DEFAULT TRUE
 );
 
+COMMENT ON TABLE gold.dim_sales_persons IS
+    'Sales team members. Grain: one row per sales person. Source: Farvision DimBookingMaster. Owner: Sales.';
+
 CREATE INDEX IF NOT EXISTS idx_dim_sales_persons_farvision
     ON gold.dim_sales_persons (farvision_sales_person_id);
 
@@ -161,6 +186,9 @@ CREATE TABLE IF NOT EXISTS gold.dim_lead_sources (
     channel_partner_name VARCHAR(255),     -- NULL if not channel partner
     cp_id UUID                             -- Channel partner reference UUID
 );
+
+COMMENT ON TABLE gold.dim_lead_sources IS
+    'Lead acquisition channels. Grain: one row per source. Source: VJ Sales App + CP records. Owner: Marketing.';
 
 CREATE INDEX IF NOT EXISTS idx_dim_lead_sources_cp
     ON gold.dim_lead_sources (cp_id);
@@ -197,6 +225,10 @@ CREATE TABLE IF NOT EXISTS gold.fact_lead_pipeline (
     event_timestamp TIMESTAMP WITH TIME ZONE,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
+
+COMMENT ON TABLE gold.fact_lead_pipeline IS
+    'Lead lifecycle stage transitions. Grain: one row per stage change per lead. '
+    'Append-only. Source: VJ Sales App leads + allotments. Owner: Sales.';
 
 CREATE INDEX IF NOT EXISTS idx_fact_pipeline_date
     ON gold.fact_lead_pipeline (event_date_key);
@@ -257,6 +289,10 @@ CREATE TABLE IF NOT EXISTS gold.fact_bookings (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
+COMMENT ON TABLE gold.fact_bookings IS
+    'One row per booking. Full lifecycle: booking → agreement → registration → cancellation. '
+    'Upsert on farvision_booking_id. Source: Farvision CRMG.DimBookingMaster. Owner: Sales.';
+
 CREATE INDEX IF NOT EXISTS idx_fact_bookings_project
     ON gold.fact_bookings (project_key);
 CREATE INDEX IF NOT EXISTS idx_fact_bookings_customer
@@ -299,6 +335,10 @@ CREATE TABLE IF NOT EXISTS gold.fact_receipts (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
+COMMENT ON TABLE gold.fact_receipts IS
+    'Payments received from customers. Grain: one row per receipt. '
+    'Upsert on farvision_receipt_id. Source: Farvision CRMG.DimReceipt. Owner: Finance.';
+
 CREATE INDEX IF NOT EXISTS idx_fact_receipts_booking
     ON gold.fact_receipts (booking_key);
 CREATE INDEX IF NOT EXISTS idx_fact_receipts_customer
@@ -335,6 +375,10 @@ CREATE TABLE IF NOT EXISTS gold.fact_invoices (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
+COMMENT ON TABLE gold.fact_invoices IS
+    'Demand letters/invoices raised. Grain: one row per invoice. '
+    'Upsert on farvision_invoice_id. Source: Farvision CRMG.DimInvoice. Owner: Finance.';
+
 CREATE INDEX IF NOT EXISTS idx_fact_invoices_booking
     ON gold.fact_invoices (booking_key);
 CREATE INDEX IF NOT EXISTS idx_fact_invoices_customer
@@ -347,13 +391,15 @@ CREATE INDEX IF NOT EXISTS idx_fact_invoices_due_date
     ON gold.fact_invoices (due_date);
 
 -- ============================================================
--- FACT: Outstanding (aging buckets for overdue amounts)
+-- SNAPSHOT: Outstanding (aging buckets for overdue amounts)
 -- Source: Farvision CRMG.FactDueDatewiseOutstanding
 -- Pre-aggregated aging analysis per customer+unit. Used for
 -- collections dashboards and overdue reporting.
+-- TRUNCATE-reload daily — NOT an append-only fact.
 -- ============================================================
-CREATE TABLE IF NOT EXISTS gold.fact_outstanding (
+CREATE TABLE IF NOT EXISTS gold.snapshot_outstanding (
     outstanding_key SERIAL PRIMARY KEY,
+    snapshot_date DATE NOT NULL DEFAULT CURRENT_DATE,
 
     -- Dimension FKs
     customer_key INT REFERENCES gold.dim_customers,
@@ -387,23 +433,27 @@ CREATE TABLE IF NOT EXISTS gold.fact_outstanding (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
-CREATE INDEX IF NOT EXISTS idx_fact_outstanding_customer
-    ON gold.fact_outstanding (customer_key);
-CREATE INDEX IF NOT EXISTS idx_fact_outstanding_project
-    ON gold.fact_outstanding (project_key);
-CREATE INDEX IF NOT EXISTS idx_fact_outstanding_unit
-    ON gold.fact_outstanding (unit_key);
-CREATE INDEX IF NOT EXISTS idx_fact_outstanding_overdue
-    ON gold.fact_outstanding (overdue_days);
+COMMENT ON TABLE gold.snapshot_outstanding IS 'Point-in-time aging snapshot. Rebuilt daily. Grain: one row per (customer, unit, due_date). Source: Farvision CRMG.FactDueDatewiseOutstanding. Owner: Finance.';
+
+CREATE INDEX IF NOT EXISTS idx_snapshot_outstanding_customer
+    ON gold.snapshot_outstanding (customer_key);
+CREATE INDEX IF NOT EXISTS idx_snapshot_outstanding_project
+    ON gold.snapshot_outstanding (project_key);
+CREATE INDEX IF NOT EXISTS idx_snapshot_outstanding_unit
+    ON gold.snapshot_outstanding (unit_key);
+CREATE INDEX IF NOT EXISTS idx_snapshot_outstanding_overdue
+    ON gold.snapshot_outstanding (overdue_days);
 
 -- ============================================================
--- FACT: Inventory (available unit pricing and status)
+-- SNAPSHOT: Inventory (available unit pricing and status)
 -- Source: VJ Sales App Inventory tables
 -- Current state of each unit in the sales inventory,
 -- including pricing and availability status.
+-- TRUNCATE-reload daily — NOT an append-only fact.
 -- ============================================================
-CREATE TABLE IF NOT EXISTS gold.fact_inventory (
+CREATE TABLE IF NOT EXISTS gold.snapshot_inventory (
     inventory_key SERIAL PRIMARY KEY,
+    snapshot_date DATE NOT NULL DEFAULT CURRENT_DATE,
 
     -- Dimension FKs
     project_key INT REFERENCES gold.dim_projects,
@@ -421,24 +471,28 @@ CREATE TABLE IF NOT EXISTS gold.fact_inventory (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
-CREATE INDEX IF NOT EXISTS idx_fact_inventory_project
-    ON gold.fact_inventory (project_key);
-CREATE INDEX IF NOT EXISTS idx_fact_inventory_unit
-    ON gold.fact_inventory (unit_key);
-CREATE INDEX IF NOT EXISTS idx_fact_inventory_typology
-    ON gold.fact_inventory (typology_key);
-CREATE INDEX IF NOT EXISTS idx_fact_inventory_status
-    ON gold.fact_inventory (inventory_status);
+COMMENT ON TABLE gold.snapshot_inventory IS 'Point-in-time inventory status. Rebuilt daily. Grain: one row per unit. Source: VJ Sales Inventory. Owner: Sales.';
+
+CREATE INDEX IF NOT EXISTS idx_snapshot_inventory_project
+    ON gold.snapshot_inventory (project_key);
+CREATE INDEX IF NOT EXISTS idx_snapshot_inventory_unit
+    ON gold.snapshot_inventory (unit_key);
+CREATE INDEX IF NOT EXISTS idx_snapshot_inventory_typology
+    ON gold.snapshot_inventory (typology_key);
+CREATE INDEX IF NOT EXISTS idx_snapshot_inventory_status
+    ON gold.snapshot_inventory (inventory_status);
 
 -- ============================================================
--- FACT: Referrals (VJOP loyalty referral tracking)
+-- SNAPSHOT: Referrals (VJOP loyalty referral tracking)
 -- Source: VJOP leads + lead_allotments + loyalty_points
 -- Tracks customer-to-customer referrals from the owner portal.
 -- Referral lifecycle: Unclaimed → Claimed → Site Visit Done →
 -- Agreement Done, with points earned at each milestone.
+-- TRUNCATE-reload daily — NOT an append-only fact.
 -- ============================================================
-CREATE TABLE IF NOT EXISTS gold.fact_referrals (
+CREATE TABLE IF NOT EXISTS gold.snapshot_referrals (
     referral_key SERIAL PRIMARY KEY,
+    snapshot_date DATE NOT NULL DEFAULT CURRENT_DATE,
 
     -- Who referred
     referrer_customer_key INT REFERENCES gold.dim_customers,
@@ -463,19 +517,22 @@ CREATE TABLE IF NOT EXISTS gold.fact_referrals (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
-CREATE INDEX IF NOT EXISTS idx_fact_referrals_referrer
-    ON gold.fact_referrals (referrer_customer_key);
-CREATE INDEX IF NOT EXISTS idx_fact_referrals_project
-    ON gold.fact_referrals (project_key);
-CREATE INDEX IF NOT EXISTS idx_fact_referrals_status
-    ON gold.fact_referrals (referral_status);
-CREATE INDEX IF NOT EXISTS idx_fact_referrals_vjop_lead
-    ON gold.fact_referrals (vjop_lead_id);
+COMMENT ON TABLE gold.snapshot_referrals IS 'Point-in-time referral status. Rebuilt daily. Grain: one row per referral lead. Source: VJOP leads + allotments + points. Owner: Marketing.';
+
+CREATE INDEX IF NOT EXISTS idx_snapshot_referrals_referrer
+    ON gold.snapshot_referrals (referrer_customer_key);
+CREATE INDEX IF NOT EXISTS idx_snapshot_referrals_project
+    ON gold.snapshot_referrals (project_key);
+CREATE INDEX IF NOT EXISTS idx_snapshot_referrals_status
+    ON gold.snapshot_referrals (referral_status);
+CREATE INDEX IF NOT EXISTS idx_snapshot_referrals_vjop_lead
+    ON gold.snapshot_referrals (vjop_lead_id);
 
 -- ============================================================
 -- FACT: Daily Funnel Snapshot (for trend analysis)
 -- Source: Aggregated daily from fact_lead_pipeline + fact_bookings
 -- Pre-computed daily counts per project for fast dashboard queries.
+-- Conversion rates are computed via gold.v_conversion_rates view.
 -- ============================================================
 CREATE TABLE IF NOT EXISTS gold.fact_daily_funnel_snapshot (
     snapshot_id SERIAL PRIMARY KEY,
@@ -490,17 +547,43 @@ CREATE TABLE IF NOT EXISTS gold.fact_daily_funnel_snapshot (
     total_cancelled INT DEFAULT 0,
     total_active_leads INT DEFAULT 0,
 
-    -- Pre-calculated conversion rates (as percentages)
-    inquiry_to_visit_rate DECIMAL(5, 2),
-    visit_to_booking_rate DECIMAL(5, 2),
-    booking_to_agreement_rate DECIMAL(5, 2),
-
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
 
     UNIQUE(snapshot_date_key, project_key)
 );
 
+COMMENT ON TABLE gold.fact_daily_funnel_snapshot IS
+    'Daily lead funnel counts per project. Grain: one row per (date, project). '
+    'Source: Aggregated from fact_lead_pipeline + fact_bookings. Freshness: daily. Owner: Sales.';
+
 CREATE INDEX IF NOT EXISTS idx_fact_funnel_date
     ON gold.fact_daily_funnel_snapshot (snapshot_date_key);
 CREATE INDEX IF NOT EXISTS idx_fact_funnel_project
     ON gold.fact_daily_funnel_snapshot (project_key);
+
+-- ============================================================
+-- VIEW: Conversion Rates (derived from funnel counts)
+-- Computed on-the-fly to avoid storing derived metrics in facts.
+-- ============================================================
+CREATE OR REPLACE VIEW gold.v_conversion_rates AS
+SELECT
+    f.snapshot_date_key,
+    f.project_key,
+    p.project_name,
+    d.full_date AS snapshot_date,
+    f.total_inquiries,
+    f.total_site_visits,
+    f.total_bookings,
+    f.total_agreements,
+    ROUND(
+        f.total_site_visits * 100.0 / NULLIF(f.total_inquiries, 0), 2
+    ) AS inquiry_to_visit_rate,
+    ROUND(
+        f.total_bookings * 100.0 / NULLIF(f.total_site_visits, 0), 2
+    ) AS visit_to_booking_rate,
+    ROUND(
+        f.total_agreements * 100.0 / NULLIF(f.total_bookings, 0), 2
+    ) AS booking_to_agreement_rate
+FROM gold.fact_daily_funnel_snapshot f
+JOIN gold.dim_projects p ON f.project_key = p.project_key
+JOIN gold.dim_date d ON f.snapshot_date_key = d.date_key;

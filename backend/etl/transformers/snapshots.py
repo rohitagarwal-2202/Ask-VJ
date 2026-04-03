@@ -5,6 +5,9 @@ Combines:
 - gold.fact_lead_pipeline (VJ Sales lead stages)
 - gold.fact_bookings (Farvision confirmed bookings)
 to produce a unified daily view per project.
+
+Conversion rates are NOT stored — they are computed on-the-fly
+via gold.v_conversion_rates view (Medallion principle: no derived metrics in facts).
 """
 
 import logging
@@ -27,8 +30,8 @@ class SnapshotTransformer:
         Build or refresh the daily funnel snapshot for a given date.
         Defaults to today if no date provided.
 
-        Uses fact_lead_pipeline for inquiry/site_visit counts and
-        fact_bookings for confirmed booking/agreement/registration counts.
+        Stores raw counts only. Conversion rates are derived via
+        gold.v_conversion_rates view.
         """
         if snapshot_date is None:
             snapshot_date = date.today()
@@ -64,9 +67,7 @@ class SnapshotTransformer:
                 snapshot_date_key, project_key,
                 total_inquiries, total_site_visits, total_bookings,
                 total_agreements, total_registered, total_cancelled,
-                total_active_leads,
-                inquiry_to_visit_rate, visit_to_booking_rate,
-                booking_to_agreement_rate
+                total_active_leads
             )
             SELECT
                 :date_key,
@@ -77,23 +78,7 @@ class SnapshotTransformer:
                 COALESCE(bc.total_agreements, 0),
                 COALESCE(bc.total_registered, 0),
                 COALESCE(bc.total_cancelled, 0),
-                COALESCE(pc.total_active_leads, 0),
-                -- Conversion rates
-                ROUND(
-                    COALESCE(pc.total_site_visits, 0) * 100.0 /
-                    NULLIF(COALESCE(pc.total_inquiries, 0), 0),
-                    2
-                ),
-                ROUND(
-                    COALESCE(bc.total_bookings, 0) * 100.0 /
-                    NULLIF(COALESCE(pc.total_site_visits, 0), 0),
-                    2
-                ),
-                ROUND(
-                    COALESCE(bc.total_agreements, 0) * 100.0 /
-                    NULLIF(COALESCE(bc.total_bookings, 0), 0),
-                    2
-                )
+                COALESCE(pc.total_active_leads, 0)
             FROM pipeline_counts pc
             FULL OUTER JOIN booking_counts bc ON pc.project_key = bc.project_key
             ON CONFLICT (snapshot_date_key, project_key) DO UPDATE
@@ -104,9 +89,6 @@ class SnapshotTransformer:
                     total_registered = EXCLUDED.total_registered,
                     total_cancelled = EXCLUDED.total_cancelled,
                     total_active_leads = EXCLUDED.total_active_leads,
-                    inquiry_to_visit_rate = EXCLUDED.inquiry_to_visit_rate,
-                    visit_to_booking_rate = EXCLUDED.visit_to_booking_rate,
-                    booking_to_agreement_rate = EXCLUDED.booking_to_agreement_rate,
                     created_at = NOW()
         """)
 

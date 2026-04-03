@@ -32,9 +32,9 @@ class FactTransformer:
         self.build_fact_bookings()
         self.build_fact_receipts()
         self.build_fact_invoices()
-        self.build_fact_outstanding()
-        self.build_fact_inventory()
-        self.build_fact_referrals()
+        self.build_snapshot_outstanding()
+        self.build_snapshot_inventory()
+        self.build_snapshot_referrals()
 
     # ==================================================================
     # 1. fact_lead_pipeline  (VJ Sales leads → pipeline events)
@@ -448,11 +448,11 @@ class FactTransformer:
             logger.info("fact_invoices: upserted %d rows", result.rowcount)
 
     # ==================================================================
-    # 5. fact_outstanding  (Farvision FactDueDatewiseOutstanding)
+    # 5. snapshot_outstanding  (Farvision FactDueDatewiseOutstanding)
     # ==================================================================
-    def build_fact_outstanding(self):
+    def build_snapshot_outstanding(self):
         """
-        Build gold.fact_outstanding from stg_fv_fact_duedate_outstanding.
+        Build gold.snapshot_outstanding from stg_fv_fact_duedate_outstanding.
 
         Denormalized: customer_name and unit_no kept for fast LLM queries.
         Links to dim_projects via "BuId" → dim_projects.bu_id.
@@ -460,7 +460,7 @@ class FactTransformer:
         """
         with self.engine.begin() as conn:
             query = text("""
-                INSERT INTO gold.fact_outstanding (
+                INSERT INTO gold.snapshot_outstanding (
                     project_key,
                     customer_name, unit_no,
                     bill_amount, paid_amount, due_amount,
@@ -504,17 +504,17 @@ class FactTransformer:
                     ON dp.bu_id = dos."BuId"
                 WHERE dos."TenantId" = :tenant_id
             """)
-            # Outstanding is a full-refresh snapshot — truncate and reload.
-            conn.execute(text("TRUNCATE TABLE gold.fact_outstanding"))
+            # Outstanding is a full-refresh snapshot — delete today's partition and reload.
+            conn.execute(text("DELETE FROM gold.snapshot_outstanding WHERE snapshot_date = CURRENT_DATE"))
             result = conn.execute(query, {"tenant_id": FARVISION_TENANT_ID})
-            logger.info("fact_outstanding: loaded %d rows", result.rowcount)
+            logger.info("snapshot_outstanding: loaded %d rows", result.rowcount)
 
     # ==================================================================
-    # 6. fact_inventory  (VJ Sales Inventory)
+    # 6. snapshot_inventory  (VJ Sales Inventory)
     # ==================================================================
-    def build_fact_inventory(self):
+    def build_snapshot_inventory(self):
         """
-        Build gold.fact_inventory from stg_vj_inventory.
+        Build gold.snapshot_inventory from stg_vj_inventory.
 
         Links:
           - dim_projects via stg_vj_projects."buId" → dim_projects.bu_id
@@ -523,7 +523,7 @@ class FactTransformer:
         """
         with self.engine.begin() as conn:
             query = text("""
-                INSERT INTO gold.fact_inventory (
+                INSERT INTO gold.snapshot_inventory (
                     project_key, unit_key, typology_key,
                     inventory_status,
                     total_cost, bsp,
@@ -560,17 +560,17 @@ class FactTransformer:
                 LEFT JOIN bronze.stg_vj_inventory_status ist
                     ON ist."inventoryStatusId" = inv."inventoryStatusId"
             """)
-            # Inventory is a full-refresh snapshot.
-            conn.execute(text("TRUNCATE TABLE gold.fact_inventory"))
+            # Inventory is a full-refresh snapshot — delete today's partition and reload.
+            conn.execute(text("DELETE FROM gold.snapshot_inventory WHERE snapshot_date = CURRENT_DATE"))
             result = conn.execute(query)
-            logger.info("fact_inventory: loaded %d rows", result.rowcount)
+            logger.info("snapshot_inventory: loaded %d rows", result.rowcount)
 
     # ==================================================================
-    # 7. fact_referrals  (VJOP leads + lead_allotments + points)
+    # 7. snapshot_referrals  (VJOP leads + lead_allotments + points)
     # ==================================================================
-    def build_fact_referrals(self):
+    def build_snapshot_referrals(self):
         """
-        Build gold.fact_referrals from VJOP tables.
+        Build gold.snapshot_referrals from VJOP tables.
 
         - Referrer = customer who referred (stg_rnl_leads.referred_by
           → stg_rnl_customers → dim_customers via FV_LedgerID).
@@ -580,7 +580,7 @@ class FactTransformer:
         """
         with self.engine.begin() as conn:
             query = text("""
-                INSERT INTO gold.fact_referrals (
+                INSERT INTO gold.snapshot_referrals (
                     referrer_customer_key,
                     referred_lead_name, referred_mobile,
                     project_key,
@@ -632,7 +632,7 @@ class FactTransformer:
                 ) pts ON TRUE
                 WHERE rl.referred_by IS NOT NULL
             """)
-            # Referrals are a full-refresh snapshot.
-            conn.execute(text("TRUNCATE TABLE gold.fact_referrals"))
+            # Referrals are a full-refresh snapshot — delete today's partition and reload.
+            conn.execute(text("DELETE FROM gold.snapshot_referrals WHERE snapshot_date = CURRENT_DATE"))
             result = conn.execute(query)
-            logger.info("fact_referrals: loaded %d rows", result.rowcount)
+            logger.info("snapshot_referrals: loaded %d rows", result.rowcount)

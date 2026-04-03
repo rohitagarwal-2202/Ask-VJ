@@ -93,6 +93,27 @@ def run_pipeline():
     resolve_stats = resolver.resolve()
     logger.info("Entity resolution: %s", resolve_stats)
 
+    # ── Step 2.5: PRE-GOLD QUALITY GATE ─────────────────────────
+    logger.info("── Step 2.5: PRE-GOLD QUALITY GATE ──")
+
+    checker = QualityChecker(warehouse_conn)
+    pre_gold_results = checker.run_pre_gold_checks()
+    pre_gold_errors = [r for r in pre_gold_results if not r.passed and r.severity == "error"]
+
+    if pre_gold_errors:
+        logger.error(
+            "PRE-GOLD GATE FAILED: %d errors. Gold transforms BLOCKED.",
+            len(pre_gold_errors),
+        )
+        elapsed = (datetime.now() - start_time).total_seconds()
+        return {
+            "extract": extract_results,
+            "resolve": resolve_stats,
+            "quality_errors": len(pre_gold_errors),
+            "gold_blocked": True,
+            "elapsed_seconds": elapsed,
+        }
+
     # ── Step 3: TRANSFORM (Gold) ──────────────────────────────
     logger.info("── Step 3: TRANSFORM (Gold) ──")
 
@@ -105,16 +126,14 @@ def run_pipeline():
     snapshot_transformer = SnapshotTransformer(warehouse_conn)
     snapshot_transformer.build_daily_snapshot()
 
-    # ── Step 4: VALIDATE ──────────────────────────────────────
-    logger.info("── Step 4: VALIDATE ──")
+    # ── Step 4: POST-GOLD VALIDATE ────────────────────────────
+    logger.info("── Step 4: POST-GOLD VALIDATE ──")
 
-    checker = QualityChecker(warehouse_conn)
-    check_results = checker.run_all_checks()
-
-    errors = [r for r in check_results if not r.passed and r.severity == "error"]
+    post_gold_results = checker.run_post_gold_checks()
+    errors = [r for r in post_gold_results if not r.passed and r.severity == "error"]
     if errors:
         logger.error(
-            "Pipeline completed with %d quality errors! Review before trusting gold data.",
+            "Pipeline completed with %d post-Gold quality errors!",
             len(errors),
         )
 

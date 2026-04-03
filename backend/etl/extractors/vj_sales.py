@@ -215,8 +215,8 @@ class VJSalesExtractor(BaseExtractor):
                     SELECT "allotmentPaymentId", "unitId", "leadId",
                            "status", "paidAmount", "bookingId",
                            "applicationNo",
-                           "bookingAmt"::text   AS "bookingAmt",
-                           "unitCost"::text     AS "unitCost",
+                           "bookingAmt",
+                           "unitCost",
                            "agreementNo", "agreementDate",
                            "created_at"
                     FROM "AllotmentPayment"
@@ -226,8 +226,8 @@ class VJSalesExtractor(BaseExtractor):
                     SELECT "allotmentPaymentId", "unitId", "leadId",
                            "status", "paidAmount", "bookingId",
                            "applicationNo",
-                           "bookingAmt"::text   AS "bookingAmt",
-                           "unitCost"::text     AS "unitCost",
+                           "bookingAmt",
+                           "unitCost",
                            "agreementNo", "agreementDate",
                            "created_at"
                     FROM "AllotmentPayment"

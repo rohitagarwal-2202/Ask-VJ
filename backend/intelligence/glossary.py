@@ -67,10 +67,10 @@ GLOSSARY: list[GlossaryEntry] = [
         definition="Unit type classification in Farvision. Key mappings: "
                    "TypologyId 1 = 1.00BHK, 2 = 1.50BHK, 4 = 2.00BHK, 6 = 3.00BHK (base), "
                    "23 = 3.00BHK XL, 35 = 3.00BHK XR, 37 = 2.00BHK XL, 36 = 2.00BHK XR. "
-                   "IMPORTANT: '3 BHK' means ONLY TypologyId 6 (base) unless user explicitly says XL or XR.",
+                   "IMPORTANT: '3 BHK' means ONLY the base variant unless user explicitly says XL or XR.",
         sql_hint="Use gold.dim_typologies table. For '3 BHK' queries, filter: "
-                 "WHERE t.typology_id = 6 (NOT 23 or 35). For 'all 3 BHK variants', "
-                 "use WHERE t.display_name LIKE '3 BHK%'.",
+                 "WHERE t.is_base_variant = true AND t.display_name LIKE '3 BHK%'. "
+                 "For 'all 3 BHK variants' (including XL/XR), use WHERE t.display_name LIKE '3 BHK%'.",
         table="gold.dim_typologies",
         category="general",
     ),
@@ -119,7 +119,7 @@ GLOSSARY: list[GlossaryEntry] = [
                    "UnitStatus 1 = Sold/Booked, 2 = Available/Unsold, 3 = Blocked/Reserved. "
                    "In VJ Sales: 'Available', 'On Hold', 'Sold'.",
         sql_hint="gold.dim_units.unit_status: 1=sold, 2=available, 3=blocked. "
-                 "For available inventory, use gold.fact_inventory WHERE inventory_status = 'Available'.",
+                 "For available inventory, use gold.snapshot_inventory WHERE inventory_status = 'Available'.",
         table="gold.dim_units",
         category="sales",
     ),
@@ -217,18 +217,18 @@ GLOSSARY: list[GlossaryEntry] = [
                    "Farvision provides detailed aging: 15-day, 30-day, 60-day, 90-day, "
                    "120-day, 180-day, and 180+ day buckets.",
         formula="Bill Amount - Paid Amount = Due Amount",
-        sql_hint="Use gold.fact_outstanding for detailed aging. "
+        sql_hint="Use gold.snapshot_outstanding for detailed aging. "
                  "Columns: day_amt_15, day_amt_30, day_amt_60, day_amt_90, "
                  "day_amt_120, day_amt_180, day_amt_more_180.",
-        table="gold.fact_outstanding",
+        table="gold.snapshot_outstanding",
         category="collections",
     ),
     GlossaryEntry(
         term="on account amount",
         definition="Advance payment received from customer that hasn't been adjusted against "
                    "a specific invoice/demand yet. Tracked in Farvision outstanding tables.",
-        sql_hint="on_account_amount column in gold.fact_outstanding.",
-        table="gold.fact_outstanding",
+        sql_hint="on_account_amount column in gold.snapshot_outstanding.",
+        table="gold.snapshot_outstanding",
         category="collections",
     ),
 
@@ -240,9 +240,9 @@ GLOSSARY: list[GlossaryEntry] = [
         definition="Units that are currently unsold and available for purchase. "
                    "Pricing for available units comes from VJ Sales App's Inventory.totalCost "
                    "(NOT from Farvision, which only tracks sold units).",
-        sql_hint="Use gold.fact_inventory WHERE inventory_status = 'Available'. "
+        sql_hint="Use gold.snapshot_inventory WHERE inventory_status = 'Available'. "
                  "total_cost = total flat price, bsp = base selling price per sq ft.",
-        table="gold.fact_inventory",
+        table="gold.snapshot_inventory",
         category="sales",
     ),
     GlossaryEntry(
@@ -250,7 +250,7 @@ GLOSSARY: list[GlossaryEntry] = [
         definition="Price per square foot (₹/sq ft). DIFFERENT from total price. "
                    "Example: Rate = ₹6,905/sq ft. To get total price: Rate × CarpetArea. "
                    "In Farvision FactUnitMovement, Value = total price (NOT rate).",
-        sql_hint="For rate: use bsp from gold.fact_inventory (per sq ft). "
+        sql_hint="For rate: use bsp from gold.snapshot_inventory (per sq ft). "
                  "For total price: use total_cost or net_basic_price.",
         category="sales",
     ),
@@ -303,8 +303,8 @@ GLOSSARY: list[GlossaryEntry] = [
         definition="An existing VJ customer refers a new buyer through the VJOP portal. "
                    "Referral leads follow: Unclaimed → Claimed → Referral Sent → Site Visit Done → "
                    "Token Payment Complete → Allotment Payment Complete → Agreement Done.",
-        sql_hint="Use gold.fact_referrals. Join on referrer_customer_key for the referrer.",
-        table="gold.fact_referrals",
+        sql_hint="Use gold.snapshot_referrals. Join on referrer_customer_key for the referrer.",
+        table="gold.snapshot_referrals",
         category="referrals",
     ),
     GlossaryEntry(
@@ -320,9 +320,9 @@ GLOSSARY: list[GlossaryEntry] = [
                    "Only count status='success' or 'Success' for actual transactions.",
         formula="Points earned: SUM(points WHERE type='credit'). "
                 "Points redeemed: SUM(points WHERE type='debit' AND status='success').",
-        sql_hint="Use gold.fact_referrals for per-referral points. "
+        sql_hint="Use gold.snapshot_referrals for per-referral points. "
                  "points_earned and points_redeemed columns.",
-        table="gold.fact_referrals",
+        table="gold.snapshot_referrals",
         good_range="Varies by reward config",
         category="referrals",
     ),

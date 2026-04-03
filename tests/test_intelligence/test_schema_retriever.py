@@ -47,9 +47,9 @@ def test_gold_schema_table_names():
         "gold.fact_bookings",
         "gold.fact_receipts",
         "gold.fact_invoices",
-        "gold.fact_outstanding",
-        "gold.fact_inventory",
-        "gold.fact_referrals",
+        "gold.snapshot_outstanding",
+        "gold.snapshot_inventory",
+        "gold.snapshot_referrals",
         "gold.fact_daily_funnel_snapshot",
     }
     assert expected == names
@@ -77,21 +77,21 @@ def test_rule_match_outstanding_query(retriever):
     """Outstanding questions should match fact_outstanding."""
     matched = retriever._rule_based_match("Show outstanding aging analysis", None)
     names = _table_names(matched)
-    assert "gold.fact_outstanding" in names
+    assert "gold.snapshot_outstanding" in names
 
 
 def test_rule_match_inventory_query(retriever):
     """Inventory questions should match fact_inventory."""
     matched = retriever._rule_based_match("Available inventory in project X", None)
     names = _table_names(matched)
-    assert "gold.fact_inventory" in names
+    assert "gold.snapshot_inventory" in names
 
 
 def test_rule_match_referral_query(retriever):
     """Referral questions should match fact_referrals."""
     matched = retriever._rule_based_match("Top referrers from VJOP", None)
     names = _table_names(matched)
-    assert "gold.fact_referrals" in names
+    assert "gold.snapshot_referrals" in names
 
 
 def test_rule_match_typology_query(retriever):

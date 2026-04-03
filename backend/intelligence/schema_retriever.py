@@ -296,9 +296,9 @@ GOLD_SCHEMA: list[TableSchema] = [
         ],
     ),
     TableSchema(
-        table_name="gold.fact_outstanding",
-        description="Pre-aggregated aging analysis per customer+unit from Farvision. "
-                    "Used for collections dashboards and overdue reporting. "
+        table_name="gold.snapshot_outstanding",
+        description="Point-in-time snapshot of aging analysis per customer+unit from Farvision. "
+                    "Rebuilt daily. Used for collections dashboards and overdue reporting. "
                     "Aging buckets: 0-15, 16-30, 31-60, 61-90, 91-120, 121-180, >180 days.",
         columns=[
             {"name": "outstanding_key", "type": "INT", "description": "Surrogate primary key"},
@@ -335,9 +335,9 @@ GOLD_SCHEMA: list[TableSchema] = [
         ],
     ),
     TableSchema(
-        table_name="gold.fact_inventory",
-        description="Current state of each unit in the sales inventory from VJ Sales App. "
-                    "Includes pricing, availability status, and area details.",
+        table_name="gold.snapshot_inventory",
+        description="Point-in-time snapshot of each unit in the sales inventory from VJ Sales App. "
+                    "Rebuilt daily. Includes pricing, availability status, and area details.",
         columns=[
             {"name": "inventory_key", "type": "INT", "description": "Surrogate primary key"},
             {"name": "project_key", "type": "INT", "description": "FK to dim_projects"},
@@ -363,9 +363,9 @@ GOLD_SCHEMA: list[TableSchema] = [
         ],
     ),
     TableSchema(
-        table_name="gold.fact_referrals",
-        description="Customer-to-customer referrals from the VJOP owner portal. "
-                    "Referral lifecycle: Unclaimed -> Claimed -> Site Visit Done -> Agreement Done, "
+        table_name="gold.snapshot_referrals",
+        description="Point-in-time snapshot of customer-to-customer referrals from the VJOP owner portal. "
+                    "Rebuilt daily. Referral lifecycle: Unclaimed -> Claimed -> Site Visit Done -> Agreement Done, "
                     "with loyalty points earned at each milestone.",
         columns=[
             {"name": "referral_key", "type": "INT", "description": "Surrogate primary key"},
@@ -466,8 +466,8 @@ class SchemaRetriever:
             except Exception as e:
                 logger.warning("Embedding retrieval failed, using rule-based only: %s", e)
 
-        # Always include dim_date if any fact table is present
-        fact_tables = [s for s in matched if s.table_name.startswith("gold.fact_")]
+        # Always include dim_date if any fact/snapshot table is present
+        fact_tables = [s for s in matched if s.table_name.startswith(("gold.fact_", "gold.snapshot_"))]
         if fact_tables and self._schema_map["gold.dim_date"] not in matched:
             matched.append(self._schema_map["gold.dim_date"])
 
@@ -499,16 +499,16 @@ class SchemaRetriever:
 
         # Outstanding / overdue / aging / dues related
         if any(kw in q for kw in ["outstanding", "overdue", "aging", "dues", "due amount"]):
-            matched.append(self._schema_map["gold.fact_outstanding"])
+            matched.append(self._schema_map["gold.snapshot_outstanding"])
 
         # Inventory / available / unsold / pricing / rate / bsp related
         if any(kw in q for kw in ["inventory", "available", "unsold", "pricing",
                                    "rate", "bsp", "on hold"]):
-            matched.append(self._schema_map["gold.fact_inventory"])
+            matched.append(self._schema_map["gold.snapshot_inventory"])
 
         # Referral / loyalty / points / vjop related
         if any(kw in q for kw in ["referral", "loyalty", "points", "vjop", "referrer"]):
-            matched.append(self._schema_map["gold.fact_referrals"])
+            matched.append(self._schema_map["gold.snapshot_referrals"])
 
         # Pipeline / lead / inquiry / site visit related
         if any(kw in q for kw in ["lead", "inquiry", "site visit", "pipeline",

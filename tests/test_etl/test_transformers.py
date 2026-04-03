@@ -127,15 +127,15 @@ class TestDimensionTransformer:
 class TestFactTransformer:
 
     def test_fact_transformer_transform_all_calls_all_builders(self, fact_transformer):
-        """Verify transform_all invokes all 7 fact builder methods."""
+        """Verify transform_all invokes all 7 builder methods."""
         builder_names = [
             "build_fact_lead_pipeline",
             "build_fact_bookings",
             "build_fact_receipts",
             "build_fact_invoices",
-            "build_fact_outstanding",
-            "build_fact_inventory",
-            "build_fact_referrals",
+            "build_snapshot_outstanding",
+            "build_snapshot_inventory",
+            "build_snapshot_referrals",
         ]
         for name in builder_names:
             setattr(fact_transformer, name, MagicMock(name=name))
@@ -151,13 +151,14 @@ class TestFactTransformer:
         assert FARVISION_TENANT_ID == 75
 
     def test_fact_transformer_has_seven_builders(self, fact_transformer):
-        """Verify the transformer has exactly 7 build_ methods."""
+        """Verify the transformer has exactly 7 build_ methods (4 fact + 3 snapshot)."""
         build_methods = [
             m for m in dir(fact_transformer)
-            if m.startswith("build_fact_") and callable(getattr(fact_transformer, m))
+            if (m.startswith("build_fact_") or m.startswith("build_snapshot_"))
+            and callable(getattr(fact_transformer, m))
         ]
         assert len(build_methods) == 7, (
-            f"Expected 7 fact builders, found {len(build_methods)}: {build_methods}"
+            f"Expected 7 builders, found {len(build_methods)}: {build_methods}"
         )
 
 
