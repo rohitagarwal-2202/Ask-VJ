@@ -64,7 +64,7 @@ COMMENT ON TABLE gold.dim_projects IS
     'bu_id = Farvision BusinessUnitId (universal project key). '
     'Source: silver.project_crosswalk + Farvision ENGG.DimBusinessUnit. Owner: Operations.';
 
-CREATE INDEX IF NOT EXISTS idx_dim_projects_bu_id
+CREATE UNIQUE INDEX IF NOT EXISTS idx_dim_projects_bu_id
     ON gold.dim_projects (bu_id);
 
 -- ============================================================
