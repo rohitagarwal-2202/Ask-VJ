@@ -26,34 +26,34 @@ CREATE TABLE IF NOT EXISTS bronze.stg_fv_dim_booking_master (
     _source_system VARCHAR(20) DEFAULT 'farvision',
     _batch_id      UUID,
 
-    BookingId              INT NOT NULL,
-    LedgerId               INT,
-    FiscalYearId           INT,
-    BUId                   INT,
-    BookingDate            DATE,
-    BookingNo              VARCHAR(100),
-    ProjectHierarchyId     INT,
-    PrimaryUnitId          INT,
-    CustomerName           VARCHAR(500),
-    NetBasicPrice          DECIMAL(18, 2),
-    AllotmentDate          DATE,
-    AgreementDate          DATE,
-    AgreementNo            VARCHAR(100),
-    RegistrationDate       DATE,
-    RegistrationNo         VARCHAR(100),
-    TenantId               INT,
-    IsCancelled            SMALLINT,        -- SQL Server BIT: 0=false, 1=true
-    SalesPersonId          INT,
-    SalesPersonName        VARCHAR(255),
-    DiscountPercentage     DECIMAL(10, 4)
+    "BookingId"              INT NOT NULL,
+    "LedgerId"               INT,
+    "FiscalYearId"           INT,
+    "BUId"                   INT,
+    "BookingDate"            DATE,
+    "BookingNo"              VARCHAR(100),
+    "ProjectHierarchyId"     INT,
+    "PrimaryUnitId"          INT,
+    "CustomerName"           VARCHAR(500),
+    "NetBasicPrice"          DECIMAL(18, 2),
+    "AllotmentDate"          DATE,
+    "AgreementDate"          DATE,
+    "AgreementNo"            VARCHAR(100),
+    "RegistrationDate"       DATE,
+    "RegistrationNo"         VARCHAR(100),
+    "TenantId"               INT,
+    "IsCancelled"            SMALLINT,        -- SQL Server BIT: 0=false, 1=true
+    "SalesPersonId"          INT,
+    "SalesPersonName"        VARCHAR(255),
+    "DiscountPercentage"     DECIMAL(10, 4)
 );
 
 CREATE INDEX IF NOT EXISTS idx_fv_booking_master_booking_id
-    ON bronze.stg_fv_dim_booking_master (BookingId);
+    ON bronze.stg_fv_dim_booking_master ("BookingId");
 CREATE INDEX IF NOT EXISTS idx_fv_booking_master_buid
-    ON bronze.stg_fv_dim_booking_master (BUId);
+    ON bronze.stg_fv_dim_booking_master ("BUId");
 CREATE INDEX IF NOT EXISTS idx_fv_booking_master_ledger_id
-    ON bronze.stg_fv_dim_booking_master (LedgerId);
+    ON bronze.stg_fv_dim_booking_master ("LedgerId");
 CREATE INDEX IF NOT EXISTS idx_fv_booking_master_synced
     ON bronze.stg_fv_dim_booking_master (_synced_at);
 
@@ -66,28 +66,28 @@ CREATE TABLE IF NOT EXISTS bronze.stg_fv_fact_unit_movement (
     _source_system VARCHAR(20) DEFAULT 'farvision',
     _batch_id      UUID,
 
-    ProjectHierarchyId INT,
-    BUId               INT,
-    UnitId             INT,
-    UnitStatus         INT,              -- 1=sold, 2=available, 3=blocked
-    BookDate           DATE,
-    Area               DECIMAL(12, 2),
-    Value              DECIMAL(18, 2),
-    TypologyId         INT,
-    UnitCount          INT,
-    TenantId           INT,
-    TotalBasic         DECIMAL(18, 2),
-    TotalDiscount      DECIMAL(18, 2),
-    BookingId          INT,
-    CarpetArea         DECIMAL(12, 2)
+    "ProjectHierarchyId" INT,
+    "BUId"               INT,
+    "UnitId"             INT,
+    "UnitStatus"         INT,              -- 1=sold, 2=available, 3=blocked
+    "BookDate"           DATE,
+    "Area"               DECIMAL(12, 2),
+    "Value"              DECIMAL(18, 2),
+    "TypologyId"         INT,
+    "UnitCount"          INT,
+    "TenantId"           INT,
+    "TotalBasic"         DECIMAL(18, 2),
+    "TotalDiscount"      DECIMAL(18, 2),
+    "BookingId"          INT,
+    "CarpetArea"         DECIMAL(12, 2)
 );
 
 CREATE INDEX IF NOT EXISTS idx_fv_unit_movement_unit_id
-    ON bronze.stg_fv_fact_unit_movement (UnitId);
+    ON bronze.stg_fv_fact_unit_movement ("UnitId");
 CREATE INDEX IF NOT EXISTS idx_fv_unit_movement_booking_id
-    ON bronze.stg_fv_fact_unit_movement (BookingId);
+    ON bronze.stg_fv_fact_unit_movement ("BookingId");
 CREATE INDEX IF NOT EXISTS idx_fv_unit_movement_buid
-    ON bronze.stg_fv_fact_unit_movement (BUId);
+    ON bronze.stg_fv_fact_unit_movement ("BUId");
 
 -- ============================================================
 -- CRMG.DimUnitMaster
@@ -98,19 +98,19 @@ CREATE TABLE IF NOT EXISTS bronze.stg_fv_dim_unit_master (
     _source_system VARCHAR(20) DEFAULT 'farvision',
     _batch_id      UUID,
 
-    UnitId         INT NOT NULL,
-    UnitCode       VARCHAR(100),
-    BUId           INT,
-    TypologyId     INT,
-    UnitTypeId     INT,
-    FloorId        INT,
-    TenantId       INT
+    "UnitId"         INT NOT NULL,
+    "UnitCode"       VARCHAR(100),
+    "BUId"           INT,
+    "TypologyId"     INT,
+    "UnitTypeId"     INT,
+    "FloorId"        INT,
+    "TenantId"       INT
 );
 
 CREATE INDEX IF NOT EXISTS idx_fv_unit_master_unit_id
-    ON bronze.stg_fv_dim_unit_master (UnitId);
+    ON bronze.stg_fv_dim_unit_master ("UnitId");
 CREATE INDEX IF NOT EXISTS idx_fv_unit_master_buid
-    ON bronze.stg_fv_dim_unit_master (BUId);
+    ON bronze.stg_fv_dim_unit_master ("BUId");
 
 -- ============================================================
 -- CRMG.DimTypologyMaster
@@ -121,14 +121,14 @@ CREATE TABLE IF NOT EXISTS bronze.stg_fv_dim_typology_master (
     _source_system VARCHAR(20) DEFAULT 'farvision',
     _batch_id      UUID,
 
-    TypologyId     INT NOT NULL,
-    TypologyCode   VARCHAR(50),
-    Typology       VARCHAR(100),         -- e.g. 1BHK, 2BHK, 3BHK, 3BHK XL
-    TenantId       INT
+    "TypologyId"     INT NOT NULL,
+    "TypologyCode"   VARCHAR(50),
+    "Typology"       VARCHAR(100),         -- e.g. 1BHK, 2BHK, 3BHK, 3BHK XL
+    "TenantId"       INT
 );
 
 CREATE INDEX IF NOT EXISTS idx_fv_typology_master_typology_id
-    ON bronze.stg_fv_dim_typology_master (TypologyId);
+    ON bronze.stg_fv_dim_typology_master ("TypologyId");
 
 -- ============================================================
 -- CRMG.DimProjectHierarchy
@@ -139,23 +139,23 @@ CREATE TABLE IF NOT EXISTS bronze.stg_fv_dim_project_hierarchy (
     _source_system VARCHAR(20) DEFAULT 'farvision',
     _batch_id      UUID,
 
-    ProjectHierarchyId INT NOT NULL,
-    ParentId           INT,
-    HierarchyName      VARCHAR(255),
-    HierarchyLebel     INT,             -- sic: source column spelling
-    TenantId           INT,
-    BUId               INT,
-    Level1             VARCHAR(255),
-    Level2             VARCHAR(255),
-    Level3             VARCHAR(255),
-    Level4             VARCHAR(255),
-    Level5             VARCHAR(255)
+    "ProjectHierarchyId" INT NOT NULL,
+    "ParentId"           INT,
+    "HierarchyName"      VARCHAR(255),
+    "HierarchyLebel"     INT,             -- sic: source column spelling
+    "TenantId"           INT,
+    "BUId"               INT,
+    "Level1"             VARCHAR(255),
+    "Level2"             VARCHAR(255),
+    "Level3"             VARCHAR(255),
+    "Level4"             VARCHAR(255),
+    "Level5"             VARCHAR(255)
 );
 
 CREATE INDEX IF NOT EXISTS idx_fv_project_hierarchy_id
-    ON bronze.stg_fv_dim_project_hierarchy (ProjectHierarchyId);
+    ON bronze.stg_fv_dim_project_hierarchy ("ProjectHierarchyId");
 CREATE INDEX IF NOT EXISTS idx_fv_project_hierarchy_buid
-    ON bronze.stg_fv_dim_project_hierarchy (BUId);
+    ON bronze.stg_fv_dim_project_hierarchy ("BUId");
 
 -- ============================================================
 -- CRMG.DimReceipt
@@ -166,27 +166,27 @@ CREATE TABLE IF NOT EXISTS bronze.stg_fv_dim_receipt (
     _source_system VARCHAR(20) DEFAULT 'farvision',
     _batch_id      UUID,
 
-    RecieptId      INT NOT NULL,         -- sic: source column spelling
-    FiscalYearId   INT,
-    BUId           INT,
-    BookingId      INT,
-    PaymentMode    VARCHAR(100),
-    InstrumentNo   VARCHAR(100),
-    LedgerId       INT,
-    ParentLedgerId INT,
-    AmountLCY      DECIMAL(18, 2),
-    Amount         DECIMAL(18, 2),
-    TenantId       INT,
-    DocumentNo     VARCHAR(100),
-    DocumentDate   DATE
+    "RecieptId"      INT NOT NULL,         -- sic: source column spelling
+    "FiscalYearId"   INT,
+    "BUId"           INT,
+    "BookingId"      INT,
+    "PaymentMode"    VARCHAR(100),
+    "InstrumentNo"   VARCHAR(100),
+    "LedgerId"       INT,
+    "ParentLedgerId" INT,
+    "AmountLCY"      DECIMAL(18, 2),
+    "Amount"         DECIMAL(18, 2),
+    "TenantId"       INT,
+    "DocumentNo"     VARCHAR(100),
+    "DocumentDate"   DATE
 );
 
 CREATE INDEX IF NOT EXISTS idx_fv_receipt_booking_id
-    ON bronze.stg_fv_dim_receipt (BookingId);
+    ON bronze.stg_fv_dim_receipt ("BookingId");
 CREATE INDEX IF NOT EXISTS idx_fv_receipt_ledger_id
-    ON bronze.stg_fv_dim_receipt (LedgerId);
+    ON bronze.stg_fv_dim_receipt ("LedgerId");
 CREATE INDEX IF NOT EXISTS idx_fv_receipt_buid
-    ON bronze.stg_fv_dim_receipt (BUId);
+    ON bronze.stg_fv_dim_receipt ("BUId");
 
 -- ============================================================
 -- CRMG.DimInvoice
@@ -197,26 +197,26 @@ CREATE TABLE IF NOT EXISTS bronze.stg_fv_dim_invoice (
     _source_system VARCHAR(20) DEFAULT 'farvision',
     _batch_id      UUID,
 
-    InvoiceId      INT NOT NULL,
-    FiscalYearId   INT,
-    BUId           INT,
-    BookingId      INT,
-    CustomerId     INT,
-    UnitId         INT,
-    InvoiceType    VARCHAR(100),
-    AmountLCY      DECIMAL(18, 2),
-    BasicAmount    DECIMAL(18, 2),
-    LedgerId       INT,
-    TenantId       INT,
-    DocumentDate   DATE
+    "InvoiceId"      INT NOT NULL,
+    "FiscalYearId"   INT,
+    "BUId"           INT,
+    "BookingId"      INT,
+    "CustomerId"     INT,
+    "UnitId"         INT,
+    "InvoiceType"    VARCHAR(100),
+    "AmountLCY"      DECIMAL(18, 2),
+    "BasicAmount"    DECIMAL(18, 2),
+    "LedgerId"       INT,
+    "TenantId"       INT,
+    "DocumentDate"   DATE
 );
 
 CREATE INDEX IF NOT EXISTS idx_fv_invoice_booking_id
-    ON bronze.stg_fv_dim_invoice (BookingId);
+    ON bronze.stg_fv_dim_invoice ("BookingId");
 CREATE INDEX IF NOT EXISTS idx_fv_invoice_unit_id
-    ON bronze.stg_fv_dim_invoice (UnitId);
+    ON bronze.stg_fv_dim_invoice ("UnitId");
 CREATE INDEX IF NOT EXISTS idx_fv_invoice_buid
-    ON bronze.stg_fv_dim_invoice (BUId);
+    ON bronze.stg_fv_dim_invoice ("BUId");
 
 -- ============================================================
 -- CRMG.FactOutStanding
@@ -227,27 +227,27 @@ CREATE TABLE IF NOT EXISTS bronze.stg_fv_fact_outstanding (
     _source_system VARCHAR(20) DEFAULT 'farvision',
     _batch_id      UUID,
 
-    BookingId          INT,
-    UnitId             INT,
-    TenantId           INT,
-    LedgerId           INT,
-    ParentLedgerId     INT,
-    BILLAMOUNT         DECIMAL(18, 2),
-    PAIDAMOUNT         DECIMAL(18, 2),
-    OUTSTANDING        DECIMAL(18, 2),
-    ONACCOUNTAMOUNT    DECIMAL(18, 2),
-    NetBasicPrice      DECIMAL(18, 2),
-    BUId               INT,
-    ProjectHierarchyId INT,
-    Status             VARCHAR(100)
+    "BookingId"          INT,
+    "UnitId"             INT,
+    "TenantId"           INT,
+    "LedgerId"           INT,
+    "ParentLedgerId"     INT,
+    "BILLAMOUNT"         DECIMAL(18, 2),
+    "PAIDAMOUNT"         DECIMAL(18, 2),
+    "OUTSTANDING"        DECIMAL(18, 2),
+    "ONACCOUNTAMOUNT"    DECIMAL(18, 2),
+    "NetBasicPrice"      DECIMAL(18, 2),
+    "BUId"               INT,
+    "ProjectHierarchyId" INT,
+    "Status"             VARCHAR(100)
 );
 
 CREATE INDEX IF NOT EXISTS idx_fv_outstanding_booking_id
-    ON bronze.stg_fv_fact_outstanding (BookingId);
+    ON bronze.stg_fv_fact_outstanding ("BookingId");
 CREATE INDEX IF NOT EXISTS idx_fv_outstanding_ledger_id
-    ON bronze.stg_fv_fact_outstanding (LedgerId);
+    ON bronze.stg_fv_fact_outstanding ("LedgerId");
 CREATE INDEX IF NOT EXISTS idx_fv_outstanding_buid
-    ON bronze.stg_fv_fact_outstanding (BUId);
+    ON bronze.stg_fv_fact_outstanding ("BUId");
 
 -- ============================================================
 -- CRMG.FactDueDatewiseOutstanding
@@ -258,30 +258,30 @@ CREATE TABLE IF NOT EXISTS bronze.stg_fv_fact_duedate_outstanding (
     _source_system VARCHAR(20) DEFAULT 'farvision',
     _batch_id      UUID,
 
-    TenantId       INT,
-    LedgerId       INT,
-    CustomerName   VARCHAR(500),
-    DocumentDate   DATE,
-    DueDate        DATE,
-    OverdueDays    INT,
-    UnitNo         VARCHAR(100),
-    Bill_Amount    DECIMAL(18, 2),
-    Paid_Amount    DECIMAL(18, 2),
-    Due_Amount     DECIMAL(18, 2),
-    BillOs         DECIMAL(18, 2),
-    DayAmt_15      DECIMAL(18, 2),
-    DayAmt_30      DECIMAL(18, 2),
-    DayAmt_60      DECIMAL(18, 2),
-    DayAmt_90      DECIMAL(18, 2),
-    DayAmt_120     DECIMAL(18, 2),
-    DayAmt_150     DECIMAL(18, 2),
-    DayAmt_180     DECIMAL(18, 2),
-    DayAmt_More180 DECIMAL(18, 2),
-    BuId           INT,
-    Level1         VARCHAR(255),
-    Level2         VARCHAR(255),
-    Level3         VARCHAR(255),
-    Level4         VARCHAR(255)
+    "TenantId"       INT,
+    "LedgerId"       INT,
+    "CustomerName"   VARCHAR(500),
+    "DocumentDate"   DATE,
+    "DueDate"        DATE,
+    "OverdueDays"    INT,
+    "UnitNo"         VARCHAR(100),
+    "Bill_Amount"    DECIMAL(18, 2),
+    "Paid_Amount"    DECIMAL(18, 2),
+    "Due_Amount"     DECIMAL(18, 2),
+    "BillOs"         DECIMAL(18, 2),
+    "DayAmt_15"      DECIMAL(18, 2),
+    "DayAmt_30"      DECIMAL(18, 2),
+    "DayAmt_60"      DECIMAL(18, 2),
+    "DayAmt_90"      DECIMAL(18, 2),
+    "DayAmt_120"     DECIMAL(18, 2),
+    "DayAmt_150"     DECIMAL(18, 2),
+    "DayAmt_180"     DECIMAL(18, 2),
+    "DayAmt_More180" DECIMAL(18, 2),
+    "BuId"           INT,
+    "Level1"         VARCHAR(255),
+    "Level2"         VARCHAR(255),
+    "Level3"         VARCHAR(255),
+    "Level4"         VARCHAR(255)
 );
 
 CREATE INDEX IF NOT EXISTS idx_fv_duedate_os_ledger_id
