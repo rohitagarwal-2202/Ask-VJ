@@ -8,11 +8,13 @@ import logging
 from datetime import datetime
 
 import httpx
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel
 from sqlalchemy import text, create_engine
 
 from backend.config import load_config
+from backend.auth.dependencies import get_current_user
+from backend.auth.models import UserInfo
 from backend.intelligence.pipeline import IntelligencePipeline
 
 logger = logging.getLogger(__name__)
@@ -102,7 +104,7 @@ async def health_check():
 
 
 @router.post("/query", response_model=QueryResponse)
-async def query(body: QueryRequest):
+async def query(body: QueryRequest, user: UserInfo = Depends(get_current_user)):
     """
     Submit a natural language question to Ask VJ.
 
@@ -119,6 +121,7 @@ async def query(body: QueryRequest):
         result = await pipeline.ask(
             question=body.question,
             session_id=body.session_id,
+            user_id=user.user_id,
         )
     except Exception as e:
         logger.exception("Pipeline error for question: %s", body.question)
@@ -148,7 +151,7 @@ async def query(body: QueryRequest):
 
 
 @router.post("/feedback")
-async def submit_feedback(body: FeedbackRequest):
+async def submit_feedback(body: FeedbackRequest, user: UserInfo = Depends(get_current_user)):
     """User validates or corrects an answer. Used to improve accuracy over time."""
     # Store feedback in warehouse for model improvement
     try:

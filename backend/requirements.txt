@@ -19,6 +19,9 @@ langchain-ollama==0.3.0
 sentence-transformers==3.3.1
 chromadb==0.5.23
 
+# Authentication
+PyJWT==2.10.1
+
 # Utilities
 python-dotenv==1.0.1
 httpx==0.28.1

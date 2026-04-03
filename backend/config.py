@@ -111,12 +111,26 @@ class VectorDBConfig:
 
 
 @dataclass
+class AuthConfig:
+    """Authentication and authorization settings."""
+    jwt_secret_key: str = os.getenv("JWT_SECRET_KEY", "change-me-in-production")
+    jwt_expiry_hours: int = int(os.getenv("JWT_EXPIRY_HOURS", "24"))
+    otp_expiry_minutes: int = int(os.getenv("OTP_EXPIRY_MINUTES", "5"))
+    otp_max_attempts: int = int(os.getenv("OTP_MAX_ATTEMPTS", "3"))
+    otp_gateway: str = os.getenv("OTP_GATEWAY", "mock")  # mock, twilio
+    twilio_account_sid: str = os.getenv("TWILIO_ACCOUNT_SID", "")
+    twilio_auth_token: str = os.getenv("TWILIO_AUTH_TOKEN", "")
+    twilio_phone_number: str = os.getenv("TWILIO_PHONE_NUMBER", "")
+
+
+@dataclass
 class AppConfig:
     """Top-level application configuration."""
     warehouse: WarehouseDB = field(default_factory=WarehouseDB)
     llm: LLMConfig = field(default_factory=LLMConfig)
     etl: ETLConfig = field(default_factory=ETLConfig)
     vector_db: VectorDBConfig = field(default_factory=VectorDBConfig)
+    auth: AuthConfig = field(default_factory=AuthConfig)
 
     # Source system connections (populated from env or config file)
     source_databases: list[SourceDB] = field(default_factory=list)
@@ -125,6 +139,9 @@ class AppConfig:
     api_host: str = os.getenv("API_HOST", "0.0.0.0")
     api_port: int = int(os.getenv("API_PORT", "8000"))
     debug: bool = os.getenv("DEBUG", "true").lower() == "true"
+
+    # Clarification threshold
+    clarification_threshold: float = float(os.getenv("CLARIFICATION_THRESHOLD", "0.7"))
 
 
 def load_config() -> AppConfig:

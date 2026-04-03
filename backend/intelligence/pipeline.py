@@ -62,7 +62,7 @@ class IntelligencePipeline:
         self.formatter = ResponseFormatter(config.llm)
         self._glossary = get_glossary_dict()
 
-    async def ask(self, question: str, session_id: str | None = None) -> PipelineResult:
+    async def ask(self, question: str, session_id: str | None = None, user_id: int | None = None) -> PipelineResult:
         """
         Process a natural language question through the full pipeline.
 
