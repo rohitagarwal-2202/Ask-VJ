@@ -87,7 +87,7 @@ COMMENT ON TABLE gold.dim_typologies IS
     'is_base_variant=true for base types, false for XL/XR variants. '
     'For "3 BHK" queries use is_base_variant=true. Source: Farvision CRMG.DimTypologyMaster. Owner: Sales.';
 
-CREATE INDEX IF NOT EXISTS idx_dim_typologies_typology_id
+CREATE UNIQUE INDEX IF NOT EXISTS idx_dim_typologies_typology_id
     ON gold.dim_typologies (typology_id);
 
 -- ============================================================
@@ -117,7 +117,7 @@ CREATE INDEX IF NOT EXISTS idx_dim_units_project
     ON gold.dim_units (project_key);
 CREATE INDEX IF NOT EXISTS idx_dim_units_typology
     ON gold.dim_units (typology_key);
-CREATE INDEX IF NOT EXISTS idx_dim_units_farvision
+CREATE UNIQUE INDEX IF NOT EXISTS idx_dim_units_farvision
     ON gold.dim_units (farvision_unit_id);
 CREATE INDEX IF NOT EXISTS idx_dim_units_status
     ON gold.dim_units (unit_status);
@@ -149,7 +149,7 @@ COMMENT ON TABLE gold.dim_customers IS
     'Unified customer records linked across systems via silver.entity_map. '
     'Grain: one row per customer. Source: Farvision DimCustomerDetail + VJ Sales Person. Owner: Sales.';
 
-CREATE INDEX IF NOT EXISTS idx_dim_customers_unified
+CREATE UNIQUE INDEX IF NOT EXISTS idx_dim_customers_unified
     ON gold.dim_customers (unified_customer_id);
 CREATE INDEX IF NOT EXISTS idx_dim_customers_farvision
     ON gold.dim_customers (farvision_ledger_id);
@@ -172,7 +172,7 @@ CREATE TABLE IF NOT EXISTS gold.dim_sales_persons (
 COMMENT ON TABLE gold.dim_sales_persons IS
     'Sales team members. Grain: one row per sales person. Source: Farvision DimBookingMaster. Owner: Sales.';
 
-CREATE INDEX IF NOT EXISTS idx_dim_sales_persons_farvision
+CREATE UNIQUE INDEX IF NOT EXISTS idx_dim_sales_persons_farvision
     ON gold.dim_sales_persons (farvision_sales_person_id);
 
 -- ============================================================
@@ -190,6 +190,8 @@ CREATE TABLE IF NOT EXISTS gold.dim_lead_sources (
 COMMENT ON TABLE gold.dim_lead_sources IS
     'Lead acquisition channels. Grain: one row per source. Source: VJ Sales App + CP records. Owner: Marketing.';
 
+CREATE UNIQUE INDEX IF NOT EXISTS idx_dim_lead_sources_source_name
+    ON gold.dim_lead_sources (source_name);
 CREATE INDEX IF NOT EXISTS idx_dim_lead_sources_cp
     ON gold.dim_lead_sources (cp_id);
 
@@ -301,7 +303,7 @@ CREATE INDEX IF NOT EXISTS idx_fact_bookings_unit
     ON gold.fact_bookings (unit_key);
 CREATE INDEX IF NOT EXISTS idx_fact_bookings_date
     ON gold.fact_bookings (booking_date);
-CREATE INDEX IF NOT EXISTS idx_fact_bookings_farvision
+CREATE UNIQUE INDEX IF NOT EXISTS idx_fact_bookings_farvision
     ON gold.fact_bookings (farvision_booking_id);
 CREATE INDEX IF NOT EXISTS idx_fact_bookings_typology
     ON gold.fact_bookings (typology_key);
@@ -347,7 +349,7 @@ CREATE INDEX IF NOT EXISTS idx_fact_receipts_project
     ON gold.fact_receipts (project_key);
 CREATE INDEX IF NOT EXISTS idx_fact_receipts_date
     ON gold.fact_receipts (date_key);
-CREATE INDEX IF NOT EXISTS idx_fact_receipts_farvision
+CREATE UNIQUE INDEX IF NOT EXISTS idx_fact_receipts_farvision
     ON gold.fact_receipts (farvision_receipt_id);
 
 -- ============================================================
@@ -379,6 +381,8 @@ COMMENT ON TABLE gold.fact_invoices IS
     'Demand letters/invoices raised. Grain: one row per invoice. '
     'Upsert on farvision_invoice_id. Source: Farvision CRMG.DimInvoice. Owner: Finance.';
 
+CREATE UNIQUE INDEX IF NOT EXISTS idx_fact_invoices_farvision
+    ON gold.fact_invoices (farvision_invoice_id);
 CREATE INDEX IF NOT EXISTS idx_fact_invoices_booking
     ON gold.fact_invoices (booking_key);
 CREATE INDEX IF NOT EXISTS idx_fact_invoices_customer
