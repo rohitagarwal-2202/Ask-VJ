@@ -28,22 +28,21 @@ services:
       context: ./backend
       dockerfile: Dockerfile
     container_name: askvj-backend
+    network_mode: "host"
     env_file: .env
     environment:
-      WAREHOUSE_HOST: warehouse
+      WAREHOUSE_HOST: localhost
       WAREHOUSE_PORT: 5432
       WAREHOUSE_DB: askvj_warehouse
       WAREHOUSE_USER: askvj
-      VECTOR_DB_HOST: vectordb
+      VECTOR_DB_HOST: localhost
       VECTOR_DB_PORT: 8000
-      LLM_REASONING_ENDPOINT: http://ollama:11434
-      LLM_SQL_ENDPOINT: http://ollama:11434
-      LLM_EMBEDDING_ENDPOINT: http://ollama:11434
-    ports:
-      - "8000:8000"
-    depends_on:
-      warehouse:
-        condition: service_healthy
+      LLM_REASONING_ENDPOINT: http://localhost:11434
+      LLM_SQL_ENDPOINT: http://localhost:11434
+      LLM_EMBEDDING_ENDPOINT: http://localhost:11434
+    # ports mapping is informational with host networking (container shares host ports)
+    # ports:
+    #   - "8000:8000"
     restart: unless-stopped
 
   # ── Frontend (React + Nginx) ──

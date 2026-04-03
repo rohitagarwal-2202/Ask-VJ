@@ -27,7 +27,7 @@ class FarvisionExtractor(BaseExtractor):
             # ──────────────────────────────────────────────
             {
                 "staging_table": "bronze.stg_fv_dim_booking_master",
-                "timestamp_column": "LastModifiedOn",
+                "timestamp_column": None,
                 "full_query": f"""
                     SELECT BookingId, LedgerId, FiscalYearId, BUId,
                            BookingDate, BookingNo, ProjectHierarchyId,
@@ -50,8 +50,7 @@ class FarvisionExtractor(BaseExtractor):
                            DiscountPercentage
                     FROM CRMG.DimBookingMaster
                     WHERE {_TENANT_FILTER}
-                      AND LastModifiedOn > :watermark
-                    ORDER BY LastModifiedOn ASC
+                    ORDER BY BookingId ASC
                 """,
             },
 
@@ -61,7 +60,7 @@ class FarvisionExtractor(BaseExtractor):
             # ──────────────────────────────────────────────
             {
                 "staging_table": "bronze.stg_fv_fact_unit_movement",
-                "timestamp_column": "LastModifiedOn",
+                "timestamp_column": None,
                 "full_query": f"""
                     SELECT ProjectHierarchyId, BUId, UnitId, UnitStatus,
                            BookDate, Area, Value, TypologyId, UnitCount,
@@ -78,8 +77,7 @@ class FarvisionExtractor(BaseExtractor):
                            CarpetArea
                     FROM CRMG.FactUnitMovement
                     WHERE {_TENANT_FILTER}
-                      AND LastModifiedOn > :watermark
-                    ORDER BY LastModifiedOn ASC
+                    ORDER BY UnitId ASC
                 """,
             },
 
@@ -88,7 +86,7 @@ class FarvisionExtractor(BaseExtractor):
             # ──────────────────────────────────────────────
             {
                 "staging_table": "bronze.stg_fv_dim_unit_master",
-                "timestamp_column": "LastModifiedOn",
+                "timestamp_column": None,
                 "full_query": f"""
                     SELECT UnitId, UnitCode, BUId, TypologyId,
                            UnitTypeId, FloorId, TenantId
@@ -101,8 +99,7 @@ class FarvisionExtractor(BaseExtractor):
                            UnitTypeId, FloorId, TenantId
                     FROM CRMG.DimUnitMaster
                     WHERE {_TENANT_FILTER}
-                      AND LastModifiedOn > :watermark
-                    ORDER BY LastModifiedOn ASC
+                    ORDER BY UnitId ASC
                 """,
             },
 
@@ -131,7 +128,7 @@ class FarvisionExtractor(BaseExtractor):
             # ──────────────────────────────────────────────
             {
                 "staging_table": "bronze.stg_fv_dim_project_hierarchy",
-                "timestamp_column": "LastModifiedOn",
+                "timestamp_column": None,
                 "full_query": f"""
                     SELECT ProjectHierarchyId, ParentId, HierarchyName,
                            HierarchyLebel, TenantId, BUId,
@@ -146,8 +143,7 @@ class FarvisionExtractor(BaseExtractor):
                            Level1, Level2, Level3, Level4, Level5
                     FROM CRMG.DimProjectHierarchy
                     WHERE {_TENANT_FILTER}
-                      AND LastModifiedOn > :watermark
-                    ORDER BY LastModifiedOn ASC
+                    ORDER BY ProjectHierarchyId ASC
                 """,
             },
 
@@ -156,7 +152,7 @@ class FarvisionExtractor(BaseExtractor):
             # ──────────────────────────────────────────────
             {
                 "staging_table": "bronze.stg_fv_dim_receipt",
-                "timestamp_column": "CreatedOn",
+                "timestamp_column": None,
                 "full_query": f"""
                     SELECT RecieptId, FiscalYearId, BUId, BookingId,
                            PaymentMode, InstrumentNo, LedgerId,
@@ -173,8 +169,7 @@ class FarvisionExtractor(BaseExtractor):
                            DocumentNo, DocumentDate
                     FROM CRMG.DimReceipt
                     WHERE {_TENANT_FILTER}
-                      AND CreatedOn > :watermark
-                    ORDER BY CreatedOn ASC
+                    ORDER BY RecieptId ASC
                 """,
             },
 
@@ -183,7 +178,7 @@ class FarvisionExtractor(BaseExtractor):
             # ──────────────────────────────────────────────
             {
                 "staging_table": "bronze.stg_fv_dim_invoice",
-                "timestamp_column": "CreatedOn",
+                "timestamp_column": None,
                 "full_query": f"""
                     SELECT InvoiceId, FiscalYearId, BUId, BookingId,
                            CustomerId, UnitId, InvoiceType, AmountLCY,
@@ -198,8 +193,7 @@ class FarvisionExtractor(BaseExtractor):
                            BasicAmount, LedgerId, TenantId, DocumentDate
                     FROM CRMG.DimInvoice
                     WHERE {_TENANT_FILTER}
-                      AND CreatedOn > :watermark
-                    ORDER BY CreatedOn ASC
+                    ORDER BY InvoiceId ASC
                 """,
             },
 
@@ -208,7 +202,7 @@ class FarvisionExtractor(BaseExtractor):
             # ──────────────────────────────────────────────
             {
                 "staging_table": "bronze.stg_fv_fact_outstanding",
-                "timestamp_column": "LastModifiedOn",
+                "timestamp_column": None,
                 "full_query": f"""
                     SELECT BookingId, UnitId, TenantId, LedgerId,
                            ParentLedgerId, BILLAMOUNT, PAIDAMOUNT,
@@ -225,8 +219,7 @@ class FarvisionExtractor(BaseExtractor):
                            BUId, ProjectHierarchyId, Status
                     FROM CRMG.FactOutStanding
                     WHERE {_TENANT_FILTER}
-                      AND LastModifiedOn > :watermark
-                    ORDER BY LastModifiedOn ASC
+                    ORDER BY BookingId ASC
                 """,
             },
 
@@ -235,13 +228,13 @@ class FarvisionExtractor(BaseExtractor):
             # ──────────────────────────────────────────────
             {
                 "staging_table": "bronze.stg_fv_fact_duedate_outstanding",
-                "timestamp_column": "LastModifiedOn",
+                "timestamp_column": None,
                 "full_query": f"""
                     SELECT TenantId, LedgerId, CustomerName, DocumentDate,
                            DueDate, OverdueDays, UnitNo,
                            Bill_Amount, Paid_Amount, Due_Amount, BillOs,
                            DayAmt_15, DayAmt_30, DayAmt_60, DayAmt_90,
-                           DayAmt_120, DayAmt_150, DayAmt_180,
+                           DayAmt_120, DayAmt_180,
                            DayAmt_More180, BuId,
                            Level1, Level2, Level3, Level4
                     FROM CRMG.FactDueDatewiseOutstanding
@@ -253,13 +246,12 @@ class FarvisionExtractor(BaseExtractor):
                            DueDate, OverdueDays, UnitNo,
                            Bill_Amount, Paid_Amount, Due_Amount, BillOs,
                            DayAmt_15, DayAmt_30, DayAmt_60, DayAmt_90,
-                           DayAmt_120, DayAmt_150, DayAmt_180,
+                           DayAmt_120, DayAmt_180,
                            DayAmt_More180, BuId,
                            Level1, Level2, Level3, Level4
                     FROM CRMG.FactDueDatewiseOutstanding
                     WHERE {_TENANT_FILTER}
-                      AND LastModifiedOn > :watermark
-                    ORDER BY LastModifiedOn ASC
+                    ORDER BY LedgerId ASC
                 """,
             },
 
@@ -268,7 +260,7 @@ class FarvisionExtractor(BaseExtractor):
             # ──────────────────────────────────────────────
             {
                 "staging_table": "bronze.stg_fv_dim_customer_detail",
-                "timestamp_column": "LastModifiedOn",
+                "timestamp_column": None,
                 "full_query": f"""
                     SELECT LedgerCustId, TenantId, CustomerId,
                            CustomerCode, Customer, FullName, PanNo,
@@ -283,8 +275,7 @@ class FarvisionExtractor(BaseExtractor):
                            BUId, MobileNo, EmailId
                     FROM CRMG.DimCustomerDetail
                     WHERE {_TENANT_FILTER}
-                      AND LastModifiedOn > :watermark
-                    ORDER BY LastModifiedOn ASC
+                    ORDER BY LedgerCustId ASC
                 """,
             },
 
@@ -293,23 +284,20 @@ class FarvisionExtractor(BaseExtractor):
             # ──────────────────────────────────────────────
             {
                 "staging_table": "bronze.stg_fv_dim_booking_cancellation",
-                "timestamp_column": "CreatedOn",
-                "full_query": f"""
+                "timestamp_column": None,
+                "full_query": """
                     SELECT ID, BookingId, BookingCancellationNo,
                            BookingCancellationDate, CancellationCharge,
                            UnitNo, CustomerId
                     FROM CRMG.DimBookingCancellation
-                    WHERE {_TENANT_FILTER}
                     ORDER BY ID ASC
                 """,
-                "source_query": f"""
+                "source_query": """
                     SELECT ID, BookingId, BookingCancellationNo,
                            BookingCancellationDate, CancellationCharge,
                            UnitNo, CustomerId
                     FROM CRMG.DimBookingCancellation
-                    WHERE {_TENANT_FILTER}
-                      AND CreatedOn > :watermark
-                    ORDER BY CreatedOn ASC
+                    ORDER BY ID ASC
                 """,
             },
 
@@ -318,7 +306,7 @@ class FarvisionExtractor(BaseExtractor):
             # ──────────────────────────────────────────────
             {
                 "staging_table": "bronze.stg_fv_dim_unit_agreement",
-                "timestamp_column": "LastModifiedOn",
+                "timestamp_column": None,
                 "full_query": f"""
                     SELECT Id, TenantId, BookingId, BookingNo, UnitId,
                            CustomerName, AgreementNo, AgreementDate,
@@ -333,8 +321,7 @@ class FarvisionExtractor(BaseExtractor):
                            RegistrationNo, RegistrationDate
                     FROM CRMG.DimUnitAgreement
                     WHERE {_TENANT_FILTER}
-                      AND LastModifiedOn > :watermark
-                    ORDER BY LastModifiedOn ASC
+                    ORDER BY Id ASC
                 """,
             },
 
@@ -343,7 +330,7 @@ class FarvisionExtractor(BaseExtractor):
             # ──────────────────────────────────────────────
             {
                 "staging_table": "bronze.stg_fv_fact_sales_detail_wise",
-                "timestamp_column": "LastModifiedOn",
+                "timestamp_column": None,
                 "full_query": f"""
                     SELECT BookingId, BUId, LedgerId, BookingDate,
                            BookingNo, IsCancelled, Status,
@@ -366,8 +353,7 @@ class FarvisionExtractor(BaseExtractor):
                            BrokerId
                     FROM CRMG.FactSalesDetailWise
                     WHERE {_TENANT_FILTER}
-                      AND LastModifiedOn > :watermark
-                    ORDER BY LastModifiedOn ASC
+                    ORDER BY BookingId ASC
                 """,
             },
 
@@ -376,7 +362,7 @@ class FarvisionExtractor(BaseExtractor):
             # ──────────────────────────────────────────────
             {
                 "staging_table": "bronze.stg_fv_dim_business_unit",
-                "timestamp_column": "LastModifiedOn",
+                "timestamp_column": None,
                 "full_query": f"""
                     SELECT BusinessUnitId, BusinessUnit,
                            BusinessUnitParentId, BusinessUnitType,
@@ -391,8 +377,7 @@ class FarvisionExtractor(BaseExtractor):
                            TenantId, SegmentId
                     FROM ENGG.DimBusinessUnit
                     WHERE {_TENANT_FILTER}
-                      AND LastModifiedOn > :watermark
-                    ORDER BY LastModifiedOn ASC
+                    ORDER BY BusinessUnitId ASC
                 """,
             },
 
@@ -401,7 +386,7 @@ class FarvisionExtractor(BaseExtractor):
             # ──────────────────────────────────────────────
             {
                 "staging_table": "bronze.stg_fv_dim_fiscal_year_period",
-                "timestamp_column": "CreatedOn",
+                "timestamp_column": None,
                 "full_query": f"""
                     SELECT MonthPeriodId, TenantId, MonthDescription,
                            PeriodFrom, PeriodTo, Year, FiscalYearId
@@ -414,8 +399,7 @@ class FarvisionExtractor(BaseExtractor):
                            PeriodFrom, PeriodTo, Year, FiscalYearId
                     FROM FIN.DimFiscalYearPeriodMonthly
                     WHERE {_TENANT_FILTER}
-                      AND CreatedOn > :watermark
-                    ORDER BY CreatedOn ASC
+                    ORDER BY MonthPeriodId ASC
                 """,
             },
 

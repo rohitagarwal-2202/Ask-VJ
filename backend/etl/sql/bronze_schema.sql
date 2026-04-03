@@ -42,7 +42,7 @@ CREATE TABLE IF NOT EXISTS bronze.stg_fv_dim_booking_master (
     "RegistrationDate"       DATE,
     "RegistrationNo"         VARCHAR(100),
     "TenantId"               INT,
-    "IsCancelled"            SMALLINT,        -- SQL Server BIT: 0=false, 1=true
+    "IsCancelled"            BOOLEAN,         -- SQL Server BIT mapped to Python bool
     "SalesPersonId"          INT,
     "SalesPersonName"        VARCHAR(255),
     "DiscountPercentage"     DECIMAL(10, 4)
@@ -142,7 +142,7 @@ CREATE TABLE IF NOT EXISTS bronze.stg_fv_dim_project_hierarchy (
     "ProjectHierarchyId" INT NOT NULL,
     "ParentId"           INT,
     "HierarchyName"      VARCHAR(255),
-    "HierarchyLebel"     INT,             -- sic: source column spelling
+    "HierarchyLebel"     VARCHAR(100),    -- sic: source column spelling; values include 'Unknown'
     "TenantId"           INT,
     "BUId"               INT,
     "Level1"             VARCHAR(255),
@@ -274,7 +274,6 @@ CREATE TABLE IF NOT EXISTS bronze.stg_fv_fact_duedate_outstanding (
     "DayAmt_60"      DECIMAL(18, 2),
     "DayAmt_90"      DECIMAL(18, 2),
     "DayAmt_120"     DECIMAL(18, 2),
-    "DayAmt_150"     DECIMAL(18, 2),
     "DayAmt_180"     DECIMAL(18, 2),
     "DayAmt_More180" DECIMAL(18, 2),
     "BuId"           INT,
@@ -378,7 +377,7 @@ CREATE TABLE IF NOT EXISTS bronze.stg_fv_fact_sales_detail_wise (
     "LedgerId"           INT,
     "BookingDate"        DATE,
     "BookingNo"          VARCHAR(100),
-    "IsCancelled"        SMALLINT,
+    "IsCancelled"        BOOLEAN,
     "Status"             VARCHAR(100),
     "CancelationDate"    DATE,
     "AgreementDate"      DATE,
