@@ -68,16 +68,16 @@ class TwilioOTPGateway:
             return False
 
 
-def create_otp_gateway(config) -> OTPGateway:
+def create_otp_gateway(auth_config) -> OTPGateway:
     """
-    Factory: return the appropriate OTP gateway based on config.auth.otp_gateway.
+    Factory: return the appropriate OTP gateway based on auth_config.otp_gateway.
     """
-    gateway_type = config.auth.otp_gateway.lower()
+    gateway_type = auth_config.otp_gateway.lower()
     if gateway_type == "twilio":
         return TwilioOTPGateway(
-            account_sid=config.auth.twilio_account_sid,
-            auth_token=config.auth.twilio_auth_token,
-            from_number=config.auth.twilio_phone_number,
+            account_sid=auth_config.twilio_account_sid,
+            auth_token=auth_config.twilio_auth_token,
+            from_number=auth_config.twilio_phone_number,
         )
     # Default to mock
     if gateway_type != "mock":
