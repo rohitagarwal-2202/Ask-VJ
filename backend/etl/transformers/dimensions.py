@@ -276,71 +276,41 @@ class DimensionTransformer:
     # ------------------------------------------------------------------
     def build_dim_customers(self):
         """
-        Upsert gold.dim_customers from Farvision customer detail + entity_map,
-        with VJ Sales person data merged for contact info.
+        Upsert gold.dim_customers from Farvision customer detail.
 
-        Sources:
-          - silver.entity_map                 (unified_customer_id, farvision_ledger_id)
-          - bronze.stg_fv_dim_customer_detail (FullName, Customer, MobileNo, EmailId, PanNo)
-          - bronze.stg_vj_leads + stg_vj_person (name, contactNumber, email via personId)
+        Two-path approach:
+        1. Direct from Farvision DimCustomerDetail (always works)
+        2. Enhanced via entity_map when VJ Sales data is available
+
+        Source: bronze.stg_fv_dim_customer_detail
         """
         query = text("""
             INSERT INTO gold.dim_customers (
                 unified_customer_id, farvision_ledger_id,
                 full_name, customer_name, mobile, email, pan_number,
-                first_inquiry_date, source_system_origin
+                source_system_origin
             )
-            SELECT
-                em.unified_customer_id,
-                em.farvision_ledger_id,
-                COALESCE(fcd."FullName", per.name),
-                COALESCE(fcd."Customer", per.name),
-                COALESCE(fcd."MobileNo", per."contactNumber"),
-                COALESCE(fcd."EmailId", per.email),
-                fcd."PanNo",
-                -- First inquiry date from VJ Sales lead creation
-                CASE
-                    WHEN vl.created_at IS NOT NULL
-                    THEN TO_TIMESTAMP(vl.created_at / 1000.0)::date
-                    ELSE NULL
-                END,
-                CASE
-                    WHEN em.farvision_ledger_id IS NOT NULL THEN 'farvision'
-                    ELSE 'vjsales'
-                END
-            FROM silver.entity_map em
-            -- Farvision customer detail (latest sync per LedgerId)
-            LEFT JOIN LATERAL (
-                SELECT c."FullName", c."Customer", c."MobileNo", c."EmailId", c."PanNo"
-                FROM bronze.stg_fv_dim_customer_detail c
-                WHERE c."LedgerCustId" = em.farvision_ledger_id
-                ORDER BY c._sync_id DESC
-                LIMIT 1
-            ) fcd ON em.farvision_ledger_id IS NOT NULL
-            -- VJ Sales lead (for personId lookup and inquiry date)
-            LEFT JOIN LATERAL (
-                SELECT vl2."personId", vl2.created_at
-                FROM bronze.stg_vj_leads vl2
-                WHERE vl2."leadId" = em.vjsales_lead_id
-                ORDER BY vl2._sync_id DESC
-                LIMIT 1
-            ) vl ON em.vjsales_lead_id IS NOT NULL
-            -- VJ Sales person (name, phone, email)
-            LEFT JOIN LATERAL (
-                SELECT p.name, p."contactNumber", p.email
-                FROM bronze.stg_vj_person p
-                WHERE p."personId" = vl."personId"
-                ORDER BY p._sync_id DESC
-                LIMIT 1
-            ) per ON vl."personId" IS NOT NULL
-            ON CONFLICT (unified_customer_id) DO UPDATE SET
-                farvision_ledger_id = COALESCE(EXCLUDED.farvision_ledger_id, gold.dim_customers.farvision_ledger_id),
-                full_name           = COALESCE(EXCLUDED.full_name, gold.dim_customers.full_name),
-                customer_name       = COALESCE(EXCLUDED.customer_name, gold.dim_customers.customer_name),
-                mobile              = COALESCE(EXCLUDED.mobile, gold.dim_customers.mobile),
-                email               = COALESCE(EXCLUDED.email, gold.dim_customers.email),
-                pan_number          = COALESCE(EXCLUDED.pan_number, gold.dim_customers.pan_number),
-                updated_at          = NOW()
+            SELECT DISTINCT ON (c."LedgerCustId")
+                gen_random_uuid(),
+                c."LedgerCustId",
+                c."FullName",
+                c."Customer",
+                c."MobileNo",
+                c."EmailId",
+                c."PanNo",
+                'farvision'
+            FROM bronze.stg_fv_dim_customer_detail c
+            WHERE c."LedgerCustId" IS NOT NULL
+              AND c._sync_id = (
+                  SELECT MAX(c2._sync_id)
+                  FROM bronze.stg_fv_dim_customer_detail c2
+                  WHERE c2."LedgerCustId" = c."LedgerCustId"
+              )
+              AND c."LedgerCustId" NOT IN (
+                  SELECT farvision_ledger_id FROM gold.dim_customers
+                  WHERE farvision_ledger_id IS NOT NULL
+              )
+            ORDER BY c."LedgerCustId", c._sync_id DESC
         """)
         with self.engine.begin() as conn:
             result = conn.execute(query)

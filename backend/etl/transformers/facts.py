@@ -243,7 +243,7 @@ class FactTransformer:
                     dt.typology_key,
                     bm."NetBasicPrice",
                     bm."DiscountPercentage",
-                    (bm."IsCancelled" = 1),
+                    bm."IsCancelled",
                     bc."BookingCancellationDate",
                     COALESCE(ua."AgreementDate", bm."AgreementDate"),
                     COALESCE(ua."AgreementNo", bm."AgreementNo"),
