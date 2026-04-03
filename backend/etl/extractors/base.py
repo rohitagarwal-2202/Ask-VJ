@@ -175,7 +175,7 @@ class BaseExtractor(ABC):
         """Bulk insert rows into a bronze staging table."""
         # Build column list (exclude auto-generated _sync_id, _synced_at, _source_system)
         source_columns = [c for c in columns]
-        col_names = ", ".join(source_columns)
+        col_names = ", ".join(f'"{c}"' for c in source_columns)
         placeholders = ", ".join(f":{c}" for c in source_columns)
 
         insert_sql = text(f"""
