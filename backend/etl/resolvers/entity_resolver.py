@@ -88,17 +88,17 @@ class EntityResolver:
                 0.99
             FROM bronze.stg_fv_dim_booking_master fb
             -- Join to VJ Sales via BookingId
-            LEFT JOIN bronze.stg_vjsales_allotments ap
+            LEFT JOIN bronze.stg_vj_allotment_payment ap
                 ON ap."bookingId" = fb."BookingId"
                 AND ap._sync_id = (
-                    SELECT MAX(_sync_id) FROM bronze.stg_vjsales_allotments a2
+                    SELECT MAX(_sync_id) FROM bronze.stg_vj_allotment_payment a2
                     WHERE a2."bookingId" = ap."bookingId"
                 )
             -- Join to VJOP via BookingId
-            LEFT JOIN bronze.stg_vjop_customer_units cu
+            LEFT JOIN bronze.stg_rnl_customer_bookings_units cu
                 ON cu.fv_booking_id = fb."BookingId"
                 AND cu._sync_id = (
-                    SELECT MAX(_sync_id) FROM bronze.stg_vjop_customer_units c2
+                    SELECT MAX(_sync_id) FROM bronze.stg_rnl_customer_bookings_units c2
                     WHERE c2.fv_booking_id = cu.fv_booking_id
                 )
             WHERE fb."TenantId" = 75
@@ -137,14 +137,14 @@ class EntityResolver:
                 inv."unitId",
                 'unit_id_exact',
                 0.95
-            FROM bronze.stg_vjsales_inventory inv
-            JOIN bronze.stg_vjsales_projects proj
+            FROM bronze.stg_vj_inventory inv
+            JOIN bronze.stg_vj_projects proj
                 ON inv."projectId" = proj."projectId"
             WHERE inv."farvisionUnitId" IS NOT NULL
               AND inv."farvisionUnitId" > 0
               -- Use latest sync record
               AND inv._sync_id = (
-                  SELECT MAX(_sync_id) FROM bronze.stg_vjsales_inventory i2
+                  SELECT MAX(_sync_id) FROM bronze.stg_vj_inventory i2
                   WHERE i2."unitId" = inv."unitId"
               )
               -- Not already resolved by booking match
@@ -175,11 +175,11 @@ class EntityResolver:
                 vl.user_id,
                 'lead_id_exact',
                 0.95
-            FROM bronze.stg_vjop_leads vl
+            FROM bronze.stg_rnl_leads vl
             WHERE vl.sales_app_lead_id IS NOT NULL
               -- Use latest sync record
               AND vl._sync_id = (
-                  SELECT MAX(_sync_id) FROM bronze.stg_vjop_leads v2
+                  SELECT MAX(_sync_id) FROM bronze.stg_rnl_leads v2
                   WHERE v2.id = vl.id
               )
               -- Not already resolved
@@ -214,25 +214,25 @@ class EntityResolver:
                 'pending_fuzzy',
                 'Pre-booking lead with no BookingId/UnitId for exact matching',
                 'pending'
-            FROM bronze.stg_vjsales_leads l
-            JOIN bronze.stg_vjsales_persons p ON l."personId" = p."personId"
+            FROM bronze.stg_vj_leads l
+            JOIN bronze.stg_vj_person p ON l."personId" = p."personId"
                 AND p._sync_id = (
-                    SELECT MAX(_sync_id) FROM bronze.stg_vjsales_persons p2
+                    SELECT MAX(_sync_id) FROM bronze.stg_vj_person p2
                     WHERE p2."personId" = p."personId"
                 )
-            LEFT JOIN bronze.stg_vjsales_lead_status ls ON l."leadId" = ls."leadId"
+            LEFT JOIN bronze.stg_vj_lead_status ls ON l."leadId" = ls."leadId"
                 AND ls._sync_id = (
-                    SELECT MAX(_sync_id) FROM bronze.stg_vjsales_lead_status ls2
+                    SELECT MAX(_sync_id) FROM bronze.stg_vj_lead_status ls2
                     WHERE ls2."leadId" = ls."leadId"
                 )
             LEFT JOIN (
                 SELECT DISTINCT ON ("leadId") "leadId", "unitId"
-                FROM bronze.stg_vjsales_allotments
+                FROM bronze.stg_vj_allotment_payment
                 ORDER BY "leadId", _sync_id DESC
             ) ap ON ap."leadId" = l."leadId"
-            LEFT JOIN bronze.stg_vjsales_projects proj ON TRUE  -- simplified; real join would use ProjectPreference
+            LEFT JOIN bronze.stg_vj_projects proj ON TRUE  -- simplified; real join would use ProjectPreference
             WHERE l._sync_id = (
-                SELECT MAX(_sync_id) FROM bronze.stg_vjsales_leads l2
+                SELECT MAX(_sync_id) FROM bronze.stg_vj_leads l2
                 WHERE l2."leadId" = l."leadId"
             )
             -- Only queue leads that have NO allotment (unconverted)
