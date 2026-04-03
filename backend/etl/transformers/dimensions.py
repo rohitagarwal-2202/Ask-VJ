@@ -36,7 +36,7 @@ class DimensionTransformer:
     # ------------------------------------------------------------------
     # dim_date
     # ------------------------------------------------------------------
-    def build_dim_date(self, start_year: int = 2020, end_year: int = 2030):
+    def build_dim_date(self, start_year: int = 2015, end_year: int = 2035):
         """
         Populate gold.dim_date with all dates in range.
         Includes fiscal year logic (April-March for Indian FY) and
