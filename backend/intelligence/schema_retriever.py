@@ -432,35 +432,48 @@ class SchemaRetriever:
         self._schema_map = {s.table_name: s for s in GOLD_SCHEMA}
         self._embeddings_loaded = False
 
-    async def retrieve(self, question: str, parsed_metric: str | None = None, top_k: int = 5) -> list[TableSchema]:
+    async def retrieve(
+        self,
+        question: str,
+        parsed_metric: str | None = None,
+        top_k: int = 5,
+        excluded_tables: set[str] | None = None,
+    ) -> list[TableSchema]:
         """
         Retrieve the most relevant table schemas for a question.
 
         Uses a hybrid approach:
         1. Rule-based matching (fast, reliable for known patterns)
         2. Embedding-based similarity (for novel queries)
+
+        Args:
+            excluded_tables: Set of table names to exclude (e.g. from guardrails).
         """
         # Start with rule-based matching
         matched = self._rule_based_match(question, parsed_metric)
 
         if len(matched) >= top_k:
-            return matched[:top_k]
-
-        # Fill remaining slots with embedding-based retrieval
-        try:
-            embedding_matches = await self._embedding_match(question, top_k - len(matched))
-            # Deduplicate
-            matched_names = {s.table_name for s in matched}
-            for schema in embedding_matches:
-                if schema.table_name not in matched_names:
-                    matched.append(schema)
-        except Exception as e:
-            logger.warning("Embedding retrieval failed, using rule-based only: %s", e)
+            matched = matched[:top_k]
+        else:
+            # Fill remaining slots with embedding-based retrieval
+            try:
+                embedding_matches = await self._embedding_match(question, top_k - len(matched))
+                # Deduplicate
+                matched_names = {s.table_name for s in matched}
+                for schema in embedding_matches:
+                    if schema.table_name not in matched_names:
+                        matched.append(schema)
+            except Exception as e:
+                logger.warning("Embedding retrieval failed, using rule-based only: %s", e)
 
         # Always include dim_date if any fact table is present
         fact_tables = [s for s in matched if s.table_name.startswith("gold.fact_")]
         if fact_tables and self._schema_map["gold.dim_date"] not in matched:
             matched.append(self._schema_map["gold.dim_date"])
+
+        # Filter out excluded tables (guardrails)
+        if excluded_tables:
+            matched = [s for s in matched if s.table_name not in excluded_tables]
 
         return matched[:top_k]
 

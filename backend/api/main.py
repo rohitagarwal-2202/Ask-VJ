@@ -18,6 +18,8 @@ from sqlalchemy import create_engine
 from backend.api.routes import router
 from backend.auth.routes import router as auth_router
 from backend.auth.admin_routes import router as admin_router
+from backend.auth.guardrail_routes import router as guardrail_router
+from backend.auth.preference_routes import router as preference_router
 from backend.auth.otp_gateway import create_otp_gateway
 from backend.config import load_config
 
@@ -59,6 +61,12 @@ app.include_router(auth_router, prefix="/api/auth", tags=["auth"])
 
 # Admin routes — admin role required (enforced in router)
 app.include_router(admin_router, prefix="/api/admin", tags=["admin"])
+
+# Guardrail admin routes — admin role required
+app.include_router(guardrail_router, prefix="/api/admin", tags=["admin"])
+
+# Preference routes — authentication required
+app.include_router(preference_router, prefix="/api", tags=["preferences"])
 
 # Main API routes — authentication required (enforced per-endpoint)
 app.include_router(router, prefix="/api", tags=["query"])

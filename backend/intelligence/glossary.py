@@ -384,6 +384,20 @@ def find_relevant_terms(question: str) -> list[GlossaryEntry]:
     return relevant
 
 
+def override_glossary(base: list[GlossaryEntry], overrides: list[GlossaryEntry]) -> list[GlossaryEntry]:
+    """Replace entries in base with matching overrides by term, append new ones."""
+    override_map = {e.term.lower(): e for e in overrides}
+    result = []
+    for entry in base:
+        if entry.term.lower() in override_map:
+            result.append(override_map.pop(entry.term.lower()))
+        else:
+            result.append(entry)
+    # Append any remaining overrides that weren't replacements
+    result.extend(override_map.values())
+    return result
+
+
 def format_glossary_for_prompt(entries: list[GlossaryEntry]) -> str:
     """Format glossary entries for injection into LLM prompts."""
     if not entries:

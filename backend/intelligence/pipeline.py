@@ -20,10 +20,14 @@ from backend.intelligence.executor import SQLExecutor, QueryResult
 from backend.intelligence.verifier import ResultVerifier, VerificationResult
 from backend.intelligence.response_formatter import ResponseFormatter
 from backend.intelligence.glossary import (
+    GlossaryEntry,
     find_relevant_terms,
     format_glossary_for_prompt,
     get_glossary_dict,
+    override_glossary,
 )
+from backend.intelligence.user_context import UserContextManager
+from backend.auth.guardrails import DataGuardrails, UserPolicies
 
 logger = logging.getLogger(__name__)
 
@@ -87,9 +91,19 @@ class IntelligencePipeline:
         if parsed.intent == QueryIntent.CLARIFICATION:
             return self._clarification_response(question, parsed, start)
 
+        # ── Guardrails: load user policies ──
+        guardrails = DataGuardrails(self.config.warehouse.connection_string) if user_id else None
+        policies = guardrails.load_policies(user_id) if guardrails else None
+
         # ── Stage 2: Retrieve schema context ──
         logger.info("Stage 2: Retrieving schema context")
-        schemas = await self.retriever.retrieve(question, parsed.metric)
+        excluded = policies.denied_tables if policies else None
+        schemas = await self.retriever.retrieve(question, parsed.metric, excluded_tables=excluded)
+
+        # Apply guardrail schema filtering (remove denied tables, mask columns)
+        if policies:
+            schemas = guardrails.filter_schema_context(schemas, policies)
+
         schema_context = self.retriever.format_schema_for_prompt(schemas)
         data_sources = [s.table_name for s in schemas]
 
@@ -97,8 +111,39 @@ class IntelligencePipeline:
         glossary_entries = find_relevant_terms(question)
         business_rules = format_glossary_for_prompt(glossary_entries)
 
+        # Load user preferences and merge with glossary
+        if user_id:
+            from sqlalchemy import create_engine as _create_engine
+            user_ctx = UserContextManager(_create_engine(self.config.warehouse.connection_string))
+            user_prefs = user_ctx.load_preferences(user_id)
+            if user_prefs:
+                # Convert user prefs to GlossaryEntry format for merging
+                user_glossary = [
+                    GlossaryEntry(
+                        term=p.term,
+                        definition=p.definition,
+                        sql_hint=p.sql_hint,
+                        category="user_override",
+                    )
+                    for p in user_prefs
+                ]
+                merged_glossary = override_glossary(glossary_entries, user_glossary)
+                business_rules = format_glossary_for_prompt(merged_glossary)
+                # Also add user context section
+                business_rules += "\n\n" + user_ctx.format_user_context_for_prompt(user_prefs)
+
         # ── Stage 3: Generate SQL ──
         logger.info("Stage 3: Generating SQL")
+
+        # Add access restrictions to business rules for the LLM
+        if policies and policies.allowed_project_keys is not None:
+            keys_str = ", ".join(str(k) for k in policies.allowed_project_keys)
+            business_rules += (
+                f"\n\n=== ACCESS RESTRICTIONS ===\n"
+                f"IMPORTANT: Only return data for project_key IN ({keys_str}). "
+                f"Always include this filter in WHERE clauses for any table with a project_key column."
+            )
+
         try:
             sql = await self.generator.generate(
                 question=question,
@@ -121,6 +166,13 @@ class IntelligencePipeline:
                 intent=parsed.intent.value,
                 warnings=[str(e)],
             )
+
+        # ── Guardrails: post-generation enforcement ──
+        if policies:
+            sql = guardrails.inject_where_clauses(sql, policies)
+            is_allowed, reason = guardrails.validate_sql_access(sql, policies)
+            if not is_allowed:
+                return self._access_denied_response(reason, start)
 
         # ── Stage 4a: Execute SQL ──
         logger.info("Stage 4a: Executing SQL")
@@ -177,6 +229,24 @@ class IntelligencePipeline:
             intent=parsed.intent.value,
             sql_hash=hashlib.md5(sql.encode()).hexdigest()[:8],
             warnings=verification.warnings,
+        )
+
+    def _access_denied_response(self, reason: str, start: datetime) -> PipelineResult:
+        """Handle queries blocked by data guardrails."""
+        elapsed = int((datetime.now() - start).total_seconds() * 1000)
+        return PipelineResult(
+            answer=(
+                "You don't have access to this data. Contact your admin to update "
+                "your data access policies."
+            ),
+            confidence="high",
+            confidence_score=1.0,
+            data_sources=[],
+            filters_applied={},
+            last_sync=None,
+            response_time_ms=elapsed,
+            intent="access_denied",
+            warnings=[reason],
         )
 
     def _out_of_scope_response(self, question: str, start: datetime) -> PipelineResult:
