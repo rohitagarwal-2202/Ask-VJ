@@ -540,7 +540,7 @@ CREATE TABLE IF NOT EXISTS bronze.stg_vj_inventory (
     farvisionUnitId   INT,               -- cross-system join key
     farvisionStatus   VARCHAR(50),
     totalCost         DECIMAL(18, 2),
-    BSP               DECIMAL(18, 2),
+    "BSP"               DECIMAL(18, 2),
     displayUnitType   VARCHAR(50),
     soldDate          BIGINT,            -- epoch ms
     created_at        BIGINT,            -- epoch ms
