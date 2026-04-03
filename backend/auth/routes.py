@@ -58,7 +58,10 @@ async def request_otp(body: OTPRequestBody, request: Request):
         )
 
     # Generate and store OTP
-    otp_code = f"{secrets.randbelow(900000) + 100000}"
+    if config.auth.otp_gateway == "mock":
+        otp_code = "123456"
+    else:
+        otp_code = f"{secrets.randbelow(900000) + 100000}"
     expires_at = datetime.now(timezone.utc) + timedelta(
         minutes=config.auth.otp_expiry_minutes,
     )
