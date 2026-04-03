@@ -1,8 +1,10 @@
-import type { HealthResponse } from "../types/api";
+import type { HealthResponse, UserInfo } from "../types/api";
 
 interface HeaderProps {
   health: HealthResponse | null;
   onNewChat: () => void;
+  user: UserInfo | null;
+  onLogout: () => void;
 }
 
 function StatusDot({ health }: { health: HealthResponse | null }) {
@@ -22,7 +24,7 @@ function StatusDot({ health }: { health: HealthResponse | null }) {
   );
 }
 
-export default function Header({ health, onNewChat }: HeaderProps) {
+export default function Header({ health, onNewChat, user, onLogout }: HeaderProps) {
   return (
     <header className="sticky top-0 z-50 flex h-12 items-center justify-between bg-brand px-4 md:h-14 md:px-6">
       <div className="flex items-center gap-2">
@@ -34,11 +36,26 @@ export default function Header({ health, onNewChat }: HeaderProps) {
 
       <div className="flex items-center gap-3 md:gap-4">
         <StatusDot health={health} />
+
+        {user && (
+          <span className="hidden text-sm text-white/80 md:inline">
+            {user.display_name}
+          </span>
+        )}
+
         <button
           onClick={onNewChat}
           className="rounded-md border border-white/40 px-3 py-1 text-xs font-medium text-white transition-colors hover:border-white hover:bg-white/10 md:text-sm"
         >
           New Chat
+        </button>
+
+        <button
+          onClick={onLogout}
+          className="px-1 text-xs text-white/60 transition-colors hover:text-white md:text-sm"
+          title="Sign out"
+        >
+          Logout
         </button>
       </div>
     </header>

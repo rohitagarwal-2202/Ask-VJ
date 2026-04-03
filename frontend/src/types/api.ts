@@ -31,3 +31,18 @@ export interface Message {
   isLoading?: boolean;
   isError?: boolean;
 }
+
+// Auth types
+export interface UserInfo {
+  user_id: number;
+  phone: string;
+  display_name: string;
+  role: string;
+}
+
+export interface TokenResponse {
+  access_token: string;
+  token_type: string;
+  expires_in: number;
+  user: UserInfo;
+}

@@ -1,7 +1,6 @@
 import { useState, useCallback, useRef } from "react";
 import type { Message, QueryResponse } from "../types/api";
-
-const API_BASE = "/api";
+import { apiFetch } from "../lib/api";
 
 function generateId(): string {
   return Date.now().toString(36) + Math.random().toString(36).slice(2);
@@ -33,9 +32,8 @@ export function useChat() {
     setIsLoading(true);
 
     try {
-      const res = await fetch(`${API_BASE}/query`, {
+      const res = await apiFetch("/query", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           question,
           session_id: sessionId.current,

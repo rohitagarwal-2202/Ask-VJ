@@ -18,6 +18,7 @@ from sqlalchemy import create_engine
 from backend.api.routes import router
 from backend.auth.routes import router as auth_router
 from backend.auth.admin_routes import router as admin_router
+from backend.auth.otp_gateway import create_otp_gateway
 from backend.config import load_config
 
 logging.basicConfig(
@@ -33,6 +34,7 @@ async def lifespan(application: FastAPI):
     config = load_config()
     application.state.config = config
     application.state.auth_engine = create_engine(config.warehouse.connection_string)
+    application.state.otp_gateway = create_otp_gateway(config.auth)
     yield
     application.state.auth_engine.dispose()
 
