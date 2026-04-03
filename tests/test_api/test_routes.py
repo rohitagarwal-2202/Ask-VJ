@@ -10,11 +10,16 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from httpx import AsyncClient, ASGITransport
 
 from backend.api.main import app
+from backend.auth.dependencies import get_current_user
+from backend.auth.models import UserInfo
 
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
+_MOCK_USER = UserInfo(user_id=1, phone="+910000000000", display_name="Test User", role="admin")
+
 
 def _mock_pipeline_result(**overrides):
     """Return a mock object that looks like a pipeline result."""
@@ -28,6 +33,9 @@ def _mock_pipeline_result(**overrides):
         "last_sync": "2026-04-01T12:00:00Z",
         "response_time_ms": 340,
         "warnings": [],
+        "needs_clarification": False,
+        "clarification_id": None,
+        "clarification_options": None,
     }
     defaults.update(overrides)
     result = MagicMock()
@@ -38,9 +46,12 @@ def _mock_pipeline_result(**overrides):
 
 @pytest.fixture
 def async_client():
-    """Provide an httpx AsyncClient wired to the FastAPI app."""
+    """Provide an httpx AsyncClient wired to the FastAPI app with auth overridden."""
+    app.dependency_overrides[get_current_user] = lambda: _MOCK_USER
     transport = ASGITransport(app=app)
-    return AsyncClient(transport=transport, base_url="http://test")
+    client = AsyncClient(transport=transport, base_url="http://test")
+    yield client
+    app.dependency_overrides.clear()
 
 
 # ---------------------------------------------------------------------------
