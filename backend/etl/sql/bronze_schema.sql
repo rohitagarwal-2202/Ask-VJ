@@ -938,7 +938,7 @@ CREATE TABLE IF NOT EXISTS bronze.stg_rnl_transactions (
     transaction_type   VARCHAR(100),
     amount             DECIMAL(18, 2),
     status             VARCHAR(50),
-    UTR                VARCHAR(100),
+    "UTR"                VARCHAR(100),
     transaction_date   TIMESTAMP
 );
 
