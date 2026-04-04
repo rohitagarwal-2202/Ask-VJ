@@ -8,6 +8,8 @@ Reads from environment variables with sensible defaults for local development.
 import os
 from dataclasses import dataclass, field
 
+from dotenv import load_dotenv
+
 
 @dataclass
 class SourceDB:
@@ -146,7 +148,8 @@ class AppConfig:
 
 
 def load_config() -> AppConfig:
-    """Load configuration from environment variables."""
+    """Load configuration from environment variables and .env file."""
+    load_dotenv()  # Load .env file if present (no-op if vars already set by Docker)
     config = AppConfig()
 
     # Add source databases from environment

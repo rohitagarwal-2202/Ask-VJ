@@ -39,6 +39,7 @@ export default function App() {
         isLoading={isLoading}
         onSendMessage={sendMessage}
         onSelectClarification={selectClarification}
+        health={health}
       />
     </div>
   );

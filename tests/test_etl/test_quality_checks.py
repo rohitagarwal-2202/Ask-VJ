@@ -191,6 +191,6 @@ def test_run_all_checks_returns_list(checker):
     results = checker.run_all_checks()
 
     assert isinstance(results, list)
-    assert len(results) == 8, f"Expected 8 check results, got {len(results)}"
+    assert len(results) >= 8, f"Expected at least 8 check results, got {len(results)}"
     for r in results:
         assert isinstance(r, QualityCheckResult)

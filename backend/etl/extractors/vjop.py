@@ -11,7 +11,7 @@ class VJOPExtractor(BaseExtractor):
 
     @property
     def source_name(self) -> str:
-        return "rnl"
+        return "vjop"
 
     def get_extract_tasks(self) -> list[dict]:
         return [

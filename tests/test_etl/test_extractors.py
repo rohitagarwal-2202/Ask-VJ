@@ -64,8 +64,8 @@ class TestFarvisionExtractor:
         tasks = farvision_extractor.get_extract_tasks()
         for task in tasks:
             full_q = task["full_query"]
-            # dbo.DimDate is a static table without TenantId
-            if "dbo.DimDate" in full_q:
+            # Some tables don't have TenantId column
+            if "dbo.DimDate" in full_q or "DimBookingCancellation" in full_q:
                 continue
             assert "TenantId" in full_q or "Tenantid" in full_q, (
                 f"full_query for {task['staging_table']} should contain TenantId filter, "
@@ -147,8 +147,8 @@ class TestVJOPExtractor:
                 f"got: {task['staging_table']}"
             )
 
-    def test_vjop_source_name_is_rnl(self, vjop_extractor):
-        assert vjop_extractor.source_name == "rnl"
+    def test_vjop_source_name_is_vjop(self, vjop_extractor):
+        assert vjop_extractor.source_name == "vjop"
 
     def test_vjop_all_tasks_have_required_fields(self, vjop_extractor):
         tasks = vjop_extractor.get_extract_tasks()

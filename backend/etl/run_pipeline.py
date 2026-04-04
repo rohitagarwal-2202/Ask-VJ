@@ -17,6 +17,10 @@ import logging
 import sys
 from datetime import datetime
 
+from dotenv import load_dotenv
+
+load_dotenv()  # Ensure .env is loaded before config
+
 from backend.config import load_config
 from backend.etl.extractors.vj_sales import VJSalesExtractor
 from backend.etl.extractors.farvision import FarvisionExtractor

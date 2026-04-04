@@ -153,6 +153,8 @@ def test_no_sources_without_env(monkeypatch):
     monkeypatch.delenv("FARVISION_HOST", raising=False)
     monkeypatch.delenv("VJSALES_HOST", raising=False)
     monkeypatch.delenv("VJOP_HOST", raising=False)
+    # Prevent load_dotenv from re-loading .env after monkeypatch clears vars
+    monkeypatch.setattr("backend.config.load_dotenv", lambda: None)
 
     config = load_config()
     assert config.source_databases == []

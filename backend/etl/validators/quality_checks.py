@@ -36,10 +36,11 @@ class QualityChecker:
         self.engine: Engine = create_engine(warehouse_connection_string)
 
     def run_pre_gold_checks(self) -> list[QualityCheckResult]:
-        """Run checks on Silver data BEFORE Gold transforms. Errors here block Gold."""
+        """Run checks on Silver data BEFORE Gold transforms. Errors here block Gold.
+        IMPORTANT: Must NOT reference Gold tables — they don't exist yet."""
         results = []
         with self.engine.connect() as conn:
-            results.append(self._check_entity_resolution_coverage(conn))
+            results.append(self._check_silver_crosswalk_populated(conn))
         self._log_summary("Pre-Gold", results)
         return results
 
@@ -52,6 +53,7 @@ class QualityChecker:
             results.append(self._check_null_customer_names(conn))
             results.append(self._check_null_dates(conn))
             results.append(self._check_negative_receipt_amounts(conn))
+            results.append(self._check_entity_resolution_coverage(conn))
             results.append(self._check_negative_outstanding(conn))
             results.append(self._check_booking_completeness(conn))
         self._log_summary("Post-Gold", results)
@@ -75,6 +77,27 @@ class QualityChecker:
             logger.error("QUALITY ERROR: %s — %s", error.check_name, error.message)
         for warning in warnings:
             logger.warning("QUALITY WARNING: %s — %s", warning.check_name, warning.message)
+
+    def _check_silver_crosswalk_populated(self, conn) -> QualityCheckResult:
+        """Check that project crosswalk has entries (Silver must have data before Gold)."""
+        result = conn.execute(text(
+            "SELECT COUNT(*) FROM silver.project_crosswalk"
+        ))
+        count = result.scalar()
+
+        if count == 0:
+            return QualityCheckResult(
+                "silver_crosswalk_empty",
+                False,
+                "silver.project_crosswalk has 0 rows — projects not yet discovered",
+                "warning",  # warning, not error — allow Gold to proceed on first run
+            )
+        return QualityCheckResult(
+            "silver_crosswalk_populated",
+            True,
+            f"silver.project_crosswalk has {count} projects",
+            "info",
+        )
 
     def _check_orphan_pipeline_facts(self, conn) -> QualityCheckResult:
         """Check for pipeline records referencing non-existent customers."""

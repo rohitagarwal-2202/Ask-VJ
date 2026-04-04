@@ -23,6 +23,9 @@ from backend.auth.preference_routes import router as preference_router
 from backend.auth.otp_gateway import create_otp_gateway
 from backend.config import load_config
 
+from dotenv import load_dotenv
+load_dotenv()
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
@@ -37,6 +40,7 @@ async def lifespan(application: FastAPI):
     application.state.config = config
     application.state.auth_engine = create_engine(config.warehouse.connection_string)
     application.state.otp_gateway = create_otp_gateway(config.auth)
+    application.state.gold_ready = False  # Will be set True on first successful check
     yield
     application.state.auth_engine.dispose()
 

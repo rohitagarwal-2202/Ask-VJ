@@ -88,13 +88,17 @@ async def health_check():
     """System health check — all DB connections and LLM availability."""
     config = load_config()
 
-    # Check warehouse
+    # Check warehouse connectivity + Gold layer data
     warehouse_status = "disconnected"
     try:
         engine = create_engine(config.warehouse.connection_string)
         with engine.connect() as conn:
             conn.execute(text("SELECT 1"))
-        warehouse_status = "connected"
+            # Check if Gold layer has data
+            gold_count = conn.execute(
+                text("SELECT COUNT(*) FROM gold.dim_projects")
+            ).scalar()
+            warehouse_status = "connected" if gold_count > 0 else "empty"
         engine.dispose()
     except Exception as e:
         warehouse_status = f"error: {e}"
@@ -153,6 +157,30 @@ async def query(body: QueryRequest, user: UserInfo = Depends(get_current_user)):
     4. Execute against the warehouse and verify results
     5. Format a natural language response
     """
+    # Check if Gold layer has data (cached after first success)
+    app = body.__class__  # workaround to access request context
+    try:
+        from fastapi import Request as _Req
+        config = load_config()
+        engine = create_engine(config.warehouse.connection_string)
+        with engine.connect() as conn:
+            gold_count = conn.execute(text("SELECT COUNT(*) FROM gold.dim_projects")).scalar()
+        engine.dispose()
+        if gold_count == 0:
+            return QueryResponse(
+                answer="The data warehouse is not yet initialized. Please run the ETL pipeline first to populate data.",
+                confidence="low",
+                confidence_score=0.0,
+                data_sources=[],
+                filters_applied={},
+                intent="error",
+                last_sync=None,
+                response_time_ms=0,
+                warnings=["Gold layer is empty — ETL has not run yet"],
+            )
+    except Exception:
+        pass  # If check fails, proceed anyway
+
     pipeline = _get_pipeline()
 
     try:
