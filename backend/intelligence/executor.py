@@ -79,6 +79,8 @@ class SQLExecutor:
                             plain_rows[i][j] = val.isoformat()
                         elif isinstance(val, (bytes, memoryview)):
                             plain_rows[i][j] = str(val)
+                        elif type(val).__name__ == "Decimal":
+                            plain_rows[i][j] = float(val)
 
                 return QueryResult(
                     columns=columns,

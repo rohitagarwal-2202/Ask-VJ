@@ -34,6 +34,7 @@ def _mock_pipeline_result(**overrides):
         "response_time_ms": 340,
         "warnings": [],
         "sql_query": "SELECT COUNT(*) FROM gold.fact_bookings;",
+        "table_data": None,
         "needs_clarification": False,
         "clarification_id": None,
         "clarification_options": None,

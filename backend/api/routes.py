@@ -51,6 +51,7 @@ class QueryResponse(BaseModel):
     response_time_ms: int
     warnings: list[str] = []
     sql_query: str | None = None                     # Generated SQL for debugging
+    table_data: dict | None = None                   # Structured data for frontend tables/charts
     type: str = "answer"                             # "answer" or "clarification"
     clarification_id: str | None = None
     clarification_options: list[dict] | None = None
@@ -200,6 +201,7 @@ async def query(body: QueryRequest, user: UserInfo = Depends(get_current_user)):
         last_sync=result.last_sync,
         response_time_ms=result.response_time_ms,
         sql_query=result.sql_query,
+        table_data=result.table_data,
         warnings=result.warnings,
     )
 

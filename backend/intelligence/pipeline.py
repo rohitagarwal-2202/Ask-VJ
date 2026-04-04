@@ -46,6 +46,7 @@ class PipelineResult:
     intent: str                        # Classified intent
     sql_query: str | None = None         # Generated SQL for debugging
     sql_hash: str | None = None          # For debugging
+    table_data: dict | None = None       # {columns, rows, row_count, truncated} for frontend tables/charts
     warnings: list[str] = field(default_factory=list)
     needs_clarification: bool = False
     clarification_id: str | None = None
@@ -255,6 +256,16 @@ class IntelligencePipeline:
             last_sync=last_sync,
         )
 
+        # Build table_data for multi-row results (used for frontend tables/charts)
+        table_data = None
+        if not result.error and not result.is_empty and not result.is_scalar:
+            table_data = {
+                "columns": result.columns,
+                "rows": result.rows,
+                "row_count": result.row_count,
+                "truncated": result.truncated,
+            }
+
         elapsed = int((datetime.now() - start).total_seconds() * 1000)
         logger.info("Pipeline complete in %dms", elapsed)
 
@@ -269,6 +280,7 @@ class IntelligencePipeline:
             intent=parsed.intent.value,
             sql_query=sql,
             sql_hash=hashlib.md5(sql.encode()).hexdigest()[:8],
+            table_data=table_data,
             warnings=verification.warnings,
         )
 

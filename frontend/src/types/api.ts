@@ -9,6 +9,13 @@ export interface ClarificationOption {
   refined_query: string;
 }
 
+export interface TableData {
+  columns: string[];
+  rows: (string | number | null)[][];
+  row_count: number;
+  truncated: boolean;
+}
+
 export interface QueryResponse {
   answer: string;
   confidence: "high" | "medium" | "low";
@@ -20,6 +27,7 @@ export interface QueryResponse {
   response_time_ms: number;
   warnings: string[];
   sql_query?: string;
+  table_data?: TableData;
   type?: "answer" | "clarification";
   clarification_id?: string;
   clarification_options?: ClarificationOption[];

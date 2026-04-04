@@ -1,6 +1,10 @@
 import { useState } from "react";
 import type { Message } from "../types/api";
 import ClarificationCard from "./ClarificationCard";
+import MarkdownContent from "./MarkdownContent";
+import DataChart from "./DataChart";
+import DataTable from "./DataTable";
+import DownloadButton from "./DownloadButton";
 
 interface MessageBubbleProps {
   message: Message;
@@ -211,10 +215,15 @@ export default function MessageBubble({
     ? "bg-red-50 border border-red-200"
     : "bg-white border border-gray-100 shadow-sm";
 
+  const hasTableData = !!message.response?.table_data;
+  const widthClass = hasTableData
+    ? "max-w-[95%] md:max-w-[90%]"
+    : "max-w-[90%] md:max-w-[80%]";
+
   return (
     <div className="flex justify-start">
       <div
-        className={`max-w-[90%] rounded-2xl rounded-bl-md px-4 py-2.5 text-sm text-gray-800 md:max-w-[80%] ${bgClass}`}
+        className={`${widthClass} rounded-2xl rounded-bl-md px-4 py-2.5 text-sm text-gray-800 ${bgClass}`}
       >
         {message.isLoading ? (
           <TypingDots />
@@ -229,8 +238,24 @@ export default function MessageBubble({
           <>
             <div className="flex items-start gap-2">
               {message.isError && <ErrorIcon />}
-              <p className="whitespace-pre-wrap">{message.content}</p>
+              <MarkdownContent content={message.content} />
             </div>
+            {message.response?.table_data && (
+              <div className="mt-3 space-y-3">
+                <DataChart
+                  columns={message.response.table_data.columns}
+                  rows={message.response.table_data.rows}
+                />
+                <DataTable
+                  columns={message.response.table_data.columns}
+                  rows={message.response.table_data.rows}
+                />
+                <DownloadButton
+                  columns={message.response.table_data.columns}
+                  rows={message.response.table_data.rows}
+                />
+              </div>
+            )}
             {message.response && !message.isError && (
               <div className="mt-2">
                 <ConfidencePill
