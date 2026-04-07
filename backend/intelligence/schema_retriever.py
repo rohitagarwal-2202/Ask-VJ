@@ -52,145 +52,172 @@ GOLD_SCHEMA: list[TableSchema] = [
         sample_queries=["this month", "last quarter", "FY2026", "this fiscal year"],
     ),
     TableSchema(
-        table_name="gold.dim_projects",
-        description="VJ real estate projects. bu_id is the Farvision BusinessUnitId — "
+        table_name="gold.v_projects",
+        description="VJ real estate projects (view over Silver). bu_id is the Farvision BusinessUnitId — "
                     "the universal project key across all Farvision tables.",
         columns=[
-            {"name": "project_key", "type": "INT", "description": "Surrogate primary key"},
+            {"name": "project_skey", "type": "INT", "description": "Surrogate primary key"},
             {"name": "bu_id", "type": "INT", "description": "Farvision BusinessUnitId (universal project key)"},
             {"name": "project_name", "type": "VARCHAR", "description": "Canonical project name from crosswalk"},
-            {"name": "phase_name", "type": "VARCHAR", "description": "Phase within the project"},
-            {"name": "segment", "type": "VARCHAR", "description": "Residential, Commercial, etc."},
             {"name": "project_type", "type": "VARCHAR", "description": "High-rise, Plotted, Township, etc."},
-            {"name": "total_units", "type": "INT", "description": "Total units in project"},
-            {"name": "launch_date", "type": "DATE", "description": "Project launch date"},
-            {"name": "status", "type": "VARCHAR", "description": "active, completed, or upcoming"},
+            {"name": "rera_number", "type": "VARCHAR", "description": "RERA registration number"},
+            {"name": "city", "type": "VARCHAR", "description": "City where the project is located"},
+            {"name": "state", "type": "VARCHAR", "description": "State where the project is located"},
+            {"name": "is_completed", "type": "BOOLEAN", "description": "True if the project is completed"},
+            {"name": "is_active", "type": "BOOLEAN", "description": "True if the project is currently active"},
         ],
         joins=[],
-        sample_queries=["Project X", "Phase 2", "active projects", "residential projects"],
+        sample_queries=["Project X", "active projects", "residential projects", "projects in Pune"],
     ),
     TableSchema(
-        table_name="gold.dim_typologies",
-        description="Unit typologies (e.g. 1 BHK, 2 BHK). Maps Farvision TypologyId to readable names. "
-                    "IMPORTANT: For '3 BHK' queries use typology_id=6 only (not XL/XR variants 23,35). "
-                    "Check is_base_variant=TRUE for base typologies.",
+        table_name="gold.v_units",
+        description="Individual flats, apartments, shops, or offices within projects (view over Silver).",
         columns=[
-            {"name": "typology_key", "type": "INT", "description": "Surrogate primary key"},
-            {"name": "typology_id", "type": "INT", "description": "Farvision TypologyId"},
-            {"name": "typology_code", "type": "VARCHAR", "description": "Source code e.g. '3BHK-XL'"},
-            {"name": "typology", "type": "VARCHAR", "description": "Raw value e.g. '3.00BHK'"},
-            {"name": "display_name", "type": "VARCHAR", "description": "Human-friendly e.g. '3 BHK'"},
-            {"name": "is_base_variant", "type": "BOOLEAN", "description": "True for base 3BHK, false for XL/XR variants"},
-        ],
-        joins=[],
-        sample_queries=["3 BHK units", "typology breakdown", "1BHK vs 2BHK"],
-    ),
-    TableSchema(
-        table_name="gold.dim_units",
-        description="Individual flats, apartments, shops, or offices within projects.",
-        columns=[
-            {"name": "unit_key", "type": "INT", "description": "Surrogate primary key"},
-            {"name": "farvision_unit_id", "type": "INT", "description": "Farvision DimUnit.UnitId"},
-            {"name": "project_key", "type": "INT", "description": "FK to dim_projects"},
-            {"name": "typology_key", "type": "INT", "description": "FK to dim_typologies"},
+            {"name": "project_unit_skey", "type": "INT", "description": "Surrogate primary key"},
+            {"name": "project_name", "type": "VARCHAR", "description": "Denormalized project name"},
+            {"name": "bu_id", "type": "INT", "description": "Farvision BusinessUnitId"},
+            {"name": "wing_name", "type": "VARCHAR", "description": "Building wing name"},
+            {"name": "floor_no", "type": "INT", "description": "Floor number"},
             {"name": "unit_no", "type": "VARCHAR", "description": "Unit number (e.g., A-501)"},
-            {"name": "wing", "type": "VARCHAR", "description": "Building wing"},
-            {"name": "floor", "type": "INT", "description": "Floor number"},
-            {"name": "unit_status", "type": "INT", "description": "Farvision status: 1=sold, 2=available, 3=blocked"},
-            {"name": "farvision_status", "type": "VARCHAR", "description": "Raw status label from Farvision"},
+            {"name": "unit_type", "type": "VARCHAR", "description": "Raw unit type code"},
+            {"name": "display_unit_type", "type": "VARCHAR", "description": "Human-friendly e.g. '3 BHK - Tower A'"},
+            {"name": "unit_status", "type": "VARCHAR", "description": "Unit availability status"},
             {"name": "saleable_area", "type": "DECIMAL", "description": "Saleable area in sq ft"},
-            {"name": "carpet_area", "type": "DECIMAL", "description": "Carpet area in sq ft"},
+            {"name": "chargeable_area", "type": "DECIMAL", "description": "Chargeable area in sq ft"},
+            {"name": "total_cost_amt", "type": "DECIMAL", "description": "Total unit cost in INR"},
+            {"name": "bsp_amt", "type": "DECIMAL", "description": "Base selling price per sq ft"},
+            {"name": "fv_status", "type": "VARCHAR", "description": "Farvision status label"},
+            {"name": "fv_unit_id", "type": "INT", "description": "Farvision DimUnit.UnitId"},
         ],
         joins=[
-            "gold.dim_projects ON project_key",
-            "gold.dim_typologies ON typology_key",
+            "gold.v_projects ON bu_id",
         ],
         sample_queries=["2BHK units", "available flats", "units in wing A", "sold units"],
     ),
     TableSchema(
-        table_name="gold.dim_customers",
-        description="Unified customer records linked across VJ Sales and Farvision via entity resolution.",
+        table_name="gold.v_buyers",
+        description="Buyer / customer records (view over Silver).",
         columns=[
-            {"name": "customer_key", "type": "INT", "description": "Surrogate primary key"},
-            {"name": "unified_customer_id", "type": "UUID", "description": "From silver.entity_map"},
-            {"name": "farvision_ledger_id", "type": "INT", "description": "Farvision Ledger/CustomerId"},
-            {"name": "full_name", "type": "VARCHAR", "description": "Full name"},
-            {"name": "customer_name", "type": "VARCHAR", "description": "Display name"},
-            {"name": "phone", "type": "VARCHAR", "description": "Phone number"},
-            {"name": "mobile", "type": "VARCHAR", "description": "Mobile number"},
+            {"name": "buyer_skey", "type": "INT", "description": "Surrogate primary key"},
+            {"name": "buyer_id", "type": "VARCHAR", "description": "Source buyer identifier"},
+            {"name": "buyer_name", "type": "VARCHAR", "description": "Full buyer name"},
+            {"name": "contact_number", "type": "VARCHAR", "description": "Contact phone number"},
             {"name": "email", "type": "VARCHAR", "description": "Email address"},
-            {"name": "pan_number", "type": "VARCHAR", "description": "PAN card number"},
-            {"name": "first_inquiry_date", "type": "DATE", "description": "When the customer first inquired"},
-            {"name": "lead_source", "type": "VARCHAR", "description": "How the customer found VJ"},
-            {"name": "source_system_origin", "type": "VARCHAR", "description": "Where first seen: vjsales, farvision"},
-            {"name": "is_active", "type": "BOOLEAN", "description": "Currently active customer"},
+            {"name": "gender", "type": "VARCHAR", "description": "Gender"},
+            {"name": "pan", "type": "VARCHAR", "description": "PAN card number"},
+            {"name": "rm_name", "type": "VARCHAR", "description": "Relationship manager name"},
+            {"name": "is_verified", "type": "BOOLEAN", "description": "True if buyer identity is verified"},
         ],
         joins=[],
-        sample_queries=["customer details", "customer list", "customer by PAN"],
+        sample_queries=["customer details", "buyer list", "customer by PAN"],
     ),
     TableSchema(
-        table_name="gold.dim_sales_persons",
-        description="Sales team members who handle leads and bookings.",
+        table_name="gold.v_employees",
+        description="Sales team / employee records (view over Silver).",
         columns=[
-            {"name": "sales_person_key", "type": "INT", "description": "Surrogate primary key"},
-            {"name": "farvision_sales_person_id", "type": "INT", "description": "Farvision SalesPersonId"},
-            {"name": "name", "type": "VARCHAR", "description": "Sales person name"},
-            {"name": "team", "type": "VARCHAR", "description": "Sales team name"},
-            {"name": "region", "type": "VARCHAR", "description": "Region"},
+            {"name": "employee_skey", "type": "INT", "description": "Surrogate primary key"},
+            {"name": "employee_name", "type": "VARCHAR", "description": "Employee name"},
+            {"name": "email", "type": "VARCHAR", "description": "Email address"},
+            {"name": "role_name", "type": "VARCHAR", "description": "Role / designation"},
+            {"name": "crm_designation", "type": "VARCHAR", "description": "CRM-specific designation"},
             {"name": "is_active", "type": "BOOLEAN", "description": "Currently active"},
         ],
         joins=[],
         sample_queries=["sales person performance", "top performers", "team wise bookings"],
     ),
     TableSchema(
-        table_name="gold.dim_lead_sources",
-        description="Lead acquisition channels: walk-in, referral, digital (FB/Google), channel partners.",
+        table_name="gold.v_channel_partners",
+        description="Channel partners / brokers who refer leads to VJ (view over Silver).",
         columns=[
-            {"name": "source_key", "type": "INT", "description": "Surrogate primary key"},
-            {"name": "source_name", "type": "VARCHAR", "description": "Specific source name"},
-            {"name": "source_category", "type": "VARCHAR", "description": "organic, paid, referral, channel_partner"},
-            {"name": "channel_partner_name", "type": "VARCHAR", "description": "CP name if applicable, else NULL"},
-            {"name": "cp_id", "type": "UUID", "description": "Channel partner reference UUID"},
+            {"name": "channel_partner_skey", "type": "INT", "description": "Surrogate primary key"},
+            {"name": "cp_display_id", "type": "VARCHAR", "description": "Display identifier for the CP"},
+            {"name": "cp_type", "type": "VARCHAR", "description": "Channel partner type"},
+            {"name": "billing_name", "type": "VARCHAR", "description": "Billing / company name"},
+            {"name": "approval_status", "type": "VARCHAR", "description": "Approval status of the CP"},
+            {"name": "is_disabled", "type": "BOOLEAN", "description": "True if CP is disabled"},
         ],
         joins=[],
-        sample_queries=["lead sources", "channel partner performance", "digital leads"],
+        sample_queries=["channel partner list", "approved CPs", "CP performance"],
     ),
-    # ── Facts ───────────────────────────────────────────────────
+    # ── Views & Facts ──────────────────────────────────────────
     TableSchema(
-        table_name="gold.fact_lead_pipeline",
-        description="Every stage transition in a lead's lifecycle. One row per stage change. "
-                    "Stages: inquiry -> site_visit -> negotiation -> booking -> agreement -> registered | cancelled.",
+        table_name="gold.v_leads",
+        description="Lead records with denormalized buyer, project, and channel partner details (view over Silver). "
+                    "One row per lead. Use for lead counts, status breakdowns, and attribution analysis.",
         columns=[
-            {"name": "pipeline_event_id", "type": "INT", "description": "Primary key"},
-            {"name": "vjsales_lead_id", "type": "UUID", "description": "VJ Sales App lead UUID"},
-            {"name": "vjsales_allotment_id", "type": "UUID", "description": "VJ Sales AllotmentPayment UUID"},
-            {"name": "customer_key", "type": "INT", "description": "FK to dim_customers"},
-            {"name": "project_key", "type": "INT", "description": "FK to dim_projects"},
-            {"name": "unit_key", "type": "INT", "description": "FK to dim_units (NULL until booking)"},
-            {"name": "sales_person_key", "type": "INT", "description": "FK to dim_sales_persons"},
-            {"name": "source_key", "type": "INT", "description": "FK to dim_lead_sources"},
-            {"name": "event_date_key", "type": "INT", "description": "FK to dim_date"},
-            {"name": "pipeline_stage", "type": "VARCHAR", "description": "inquiry, site_visit, negotiation, booking, agreement, registered, cancelled"},
-            {"name": "previous_stage", "type": "VARCHAR", "description": "Stage before this transition"},
-            {"name": "days_in_previous_stage", "type": "INT", "description": "Days spent in previous stage"},
-            {"name": "allotment_status", "type": "VARCHAR", "description": "Payment Complete, Agreement Done, Booked, Cancelled, etc."},
-            {"name": "agreement_value", "type": "DECIMAL", "description": "Total agreement value in INR"},
-            {"name": "booking_amount", "type": "DECIMAL", "description": "Initial booking amount paid"},
-            {"name": "event_timestamp", "type": "TIMESTAMP", "description": "When this stage change happened"},
+            {"name": "fact_lead_skey", "type": "INT", "description": "Surrogate primary key"},
+            {"name": "lead_id", "type": "VARCHAR", "description": "Source lead identifier"},
+            {"name": "lead_display_id", "type": "VARCHAR", "description": "Human-readable lead display ID"},
+            {"name": "lead_date", "type": "DATE", "description": "Date the lead was created"},
+            {"name": "buyer_name", "type": "VARCHAR", "description": "Buyer / prospect name"},
+            {"name": "buyer_phone", "type": "VARCHAR", "description": "Buyer phone number"},
+            {"name": "project_name", "type": "VARCHAR", "description": "Denormalized project name"},
+            {"name": "bu_id", "type": "INT", "description": "Farvision BusinessUnitId"},
+            {"name": "channel_partner", "type": "VARCHAR", "description": "Channel partner name"},
+            {"name": "fos_name", "type": "VARCHAR", "description": "Field officer name"},
+            {"name": "project_head", "type": "VARCHAR", "description": "Project head name"},
+            {"name": "sales_manager", "type": "VARCHAR", "description": "Sales manager name"},
+            {"name": "claimed_by", "type": "VARCHAR", "description": "Who claimed the lead"},
+            {"name": "lead_status", "type": "VARCHAR", "description": "Current lead status"},
+            {"name": "lead_type", "type": "VARCHAR", "description": "Lead type classification"},
+            {"name": "lead_sub_type", "type": "VARCHAR", "description": "Lead sub-type classification"},
+            {"name": "lead_category", "type": "VARCHAR", "description": "Lead category"},
+            {"name": "lead_response", "type": "VARCHAR", "description": "Lead response status"},
+            {"name": "src_created_ts", "type": "TIMESTAMP", "description": "Source system created timestamp"},
+            {"name": "src_updated_ts", "type": "TIMESTAMP", "description": "Source system updated timestamp"},
         ],
         joins=[
-            "gold.dim_customers ON customer_key",
-            "gold.dim_projects ON project_key",
-            "gold.dim_units ON unit_key",
-            "gold.dim_sales_persons ON sales_person_key",
-            "gold.dim_lead_sources ON source_key",
-            "gold.dim_date ON event_date_key",
+            "gold.v_projects ON bu_id",
         ],
         sample_queries=[
-            "Lead conversion rate for Project X",
-            "Average time from inquiry to booking",
-            "Which sales person has most site visits?",
-            "Pipeline stage distribution",
+            "Total leads this month",
+            "Lead status breakdown by project",
+            "Which channel partner brought the most leads?",
+            "Leads claimed by sales manager",
+        ],
+    ),
+    TableSchema(
+        table_name="gold.v_site_visits",
+        description="Site visit records with denormalized lead, buyer, and project details (view over Silver). "
+                    "One row per site visit.",
+        columns=[
+            {"name": "fact_site_visit_skey", "type": "INT", "description": "Surrogate primary key"},
+            {"name": "site_visit_id", "type": "VARCHAR", "description": "Source site visit identifier"},
+            {"name": "lead_display_id", "type": "VARCHAR", "description": "Linked lead display ID"},
+            {"name": "buyer_name", "type": "VARCHAR", "description": "Buyer / prospect name"},
+            {"name": "project_name", "type": "VARCHAR", "description": "Denormalized project name"},
+            {"name": "accompanied_by", "type": "VARCHAR", "description": "Who accompanied the visitor"},
+            {"name": "channel_partner", "type": "VARCHAR", "description": "Channel partner name"},
+            {"name": "visit_date", "type": "DATE", "description": "Date of the site visit"},
+            {"name": "site_visit_ts", "type": "TIMESTAMP", "description": "Exact timestamp of the visit"},
+            {"name": "mode", "type": "VARCHAR", "description": "Visit mode (walk-in, scheduled, etc.)"},
+            {"name": "remarks", "type": "VARCHAR", "description": "Visit remarks / notes"},
+        ],
+        joins=[
+            "gold.v_leads ON lead_display_id",
+            "gold.v_projects ON project_name",
+        ],
+        sample_queries=[
+            "Site visits this month",
+            "Site visits by project",
+            "Which channel partner has most site visits?",
+            "Walk-in vs scheduled visits",
+        ],
+    ),
+    TableSchema(
+        table_name="gold.v_conversion_rates",
+        description="Pre-calculated lead-to-site-visit conversion rates per project (view over Silver).",
+        columns=[
+            {"name": "project_name", "type": "VARCHAR", "description": "Project name"},
+            {"name": "bu_id", "type": "INT", "description": "Farvision BusinessUnitId"},
+            {"name": "total_leads", "type": "INT", "description": "Total leads for the project"},
+            {"name": "total_site_visits", "type": "INT", "description": "Total site visits for the project"},
+            {"name": "lead_to_visit_rate", "type": "DECIMAL", "description": "Lead to site visit conversion rate %"},
+        ],
+        joins=[],
+        sample_queries=[
+            "Lead to visit conversion rate",
+            "Conversion rate by project",
         ],
     ),
     TableSchema(
@@ -486,12 +513,12 @@ class SchemaRetriever:
         if any(kw in q for kw in ["booking", "sold", "agreement", "registration",
                                    "cancel", "allotment", "discount"]):
             matched.append(self._schema_map["gold.fact_bookings"])
-            matched.append(self._schema_map["gold.dim_projects"])
+            matched.append(self._schema_map["gold.v_projects"])
 
         # Receipt / payment / collection related
         if any(kw in q for kw in ["receipt", "payment", "collection"]):
             matched.append(self._schema_map["gold.fact_receipts"])
-            matched.append(self._schema_map["gold.dim_projects"])
+            matched.append(self._schema_map["gold.v_projects"])
 
         # Invoice / demand related
         if any(kw in q for kw in ["invoice", "demand"]):
@@ -510,38 +537,40 @@ class SchemaRetriever:
         if any(kw in q for kw in ["referral", "loyalty", "points", "vjop", "referrer"]):
             matched.append(self._schema_map["gold.snapshot_referrals"])
 
-        # Pipeline / lead / inquiry / site visit related
-        if any(kw in q for kw in ["lead", "inquiry", "site visit", "pipeline",
+        # Lead / inquiry related
+        if any(kw in q for kw in ["lead", "inquiry", "pipeline",
                                    "negotiation", "allotment_status"]):
-            matched.append(self._schema_map["gold.fact_lead_pipeline"])
-            matched.append(self._schema_map["gold.dim_projects"])
+            matched.append(self._schema_map["gold.v_leads"])
+            matched.append(self._schema_map["gold.v_projects"])
 
-        # Conversion rate / trend / funnel → snapshot table
+        # Site visit related
+        if any(kw in q for kw in ["site visit", "walk-in visit", "scheduled visit"]):
+            matched.append(self._schema_map["gold.v_site_visits"])
+            matched.append(self._schema_map["gold.v_projects"])
+
+        # Conversion rate / trend / funnel → snapshot table or v_conversion_rates
         if any(kw in q for kw in ["conversion rate", "trend", "month over month",
                                    "funnel snapshot", "active leads", "funnel"]):
             matched.append(self._schema_map["gold.fact_daily_funnel_snapshot"])
+            matched.append(self._schema_map["gold.v_conversion_rates"])
 
-        # Typology specific
-        if any(kw in q for kw in ["typology", "bhk", "1bhk", "2bhk", "3bhk",
-                                   "1 bhk", "2 bhk", "3 bhk"]):
-            matched.append(self._schema_map["gold.dim_typologies"])
-
-        # Sales person
-        if any(kw in q for kw in ["sales person", "salesperson", "team", "performer"]):
-            matched.append(self._schema_map["gold.dim_sales_persons"])
+        # Sales person / employee
+        if any(kw in q for kw in ["sales person", "salesperson", "team", "performer",
+                                   "employee"]):
+            matched.append(self._schema_map["gold.v_employees"])
 
         # Lead source / channel partner
         if any(kw in q for kw in ["source", "channel partner", "digital", "walk-in",
-                                   "organic", "paid lead"]):
-            matched.append(self._schema_map["gold.dim_lead_sources"])
+                                   "organic", "paid lead", "broker", "cp "]):
+            matched.append(self._schema_map["gold.v_channel_partners"])
 
-        # Customer specific
+        # Customer / buyer specific
         if any(kw in q for kw in ["customer", "buyer"]):
-            matched.append(self._schema_map["gold.dim_customers"])
+            matched.append(self._schema_map["gold.v_buyers"])
 
         # Unit specific
         if any(kw in q for kw in ["unit", "flat", "apartment", "carpet area", "wing", "floor"]):
-            matched.append(self._schema_map["gold.dim_units"])
+            matched.append(self._schema_map["gold.v_units"])
 
         # Deduplicate while preserving order
         seen = set()

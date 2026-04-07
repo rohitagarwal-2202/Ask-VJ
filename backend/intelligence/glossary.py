@@ -53,9 +53,9 @@ GLOSSARY: list[GlossaryEntry] = [
         term="bu id",
         definition="BusinessUnitId (BUId) is the universal project identifier across all three systems. "
                    "Farvision uses ENGG.DimBusinessUnit.BusinessUnitId, VJ Sales stores it as Projects.buId, "
-                   "VJOP stores it as customer_bookings_units.BUId. Use gold.dim_projects.bu_id to filter by project.",
-        sql_hint="JOIN gold.dim_projects ON bu_id to filter by project.",
-        table="gold.dim_projects",
+                   "VJOP stores it as customer_bookings_units.BUId. Use gold.v_projects.bu_id to filter by project.",
+        sql_hint="JOIN gold.v_projects ON bu_id to filter by project.",
+        table="gold.v_projects",
         category="general",
     ),
 
@@ -118,9 +118,9 @@ GLOSSARY: list[GlossaryEntry] = [
         definition="The current status of a unit. In Farvision FactUnitMovement: "
                    "UnitStatus 1 = Sold/Booked, 2 = Available/Unsold, 3 = Blocked/Reserved. "
                    "In VJ Sales: 'Available', 'On Hold', 'Sold'.",
-        sql_hint="gold.dim_units.unit_status: 1=sold, 2=available, 3=blocked. "
+        sql_hint="gold.v_units.unit_status for unit status. "
                  "For available inventory, use gold.snapshot_inventory WHERE inventory_status = 'Available'.",
-        table="gold.dim_units",
+        table="gold.v_units",
         category="sales",
     ),
 
@@ -132,7 +132,7 @@ GLOSSARY: list[GlossaryEntry] = [
         definition="A potential customer in the VJ Sales App. Leads enter via walk-ins, referrals, "
                    "digital marketing, or channel partners. The VJ Sales App tracks 108,000+ leads. "
                    "Lead IDs are UUIDs in VJ Sales.",
-        table="gold.fact_lead_pipeline",
+        table="gold.v_leads",
         category="sales",
     ),
     GlossaryEntry(
@@ -140,7 +140,7 @@ GLOSSARY: list[GlossaryEntry] = [
         definition="The current status of a lead in the VJ Sales App. "
                    "Stages: New → Contacted → Site Visit → Negotiation → Booked → Agreement → Registered. "
                    "Can also be 'Lost' or 'Cancelled' at any point.",
-        table="gold.fact_lead_pipeline",
+        table="gold.v_leads",
         category="sales",
     ),
     GlossaryEntry(
@@ -149,23 +149,25 @@ GLOSSARY: list[GlossaryEntry] = [
                    "Tracked in AllotmentPayment table. Allotment statuses include: "
                    "'Payment Pending', 'Partial Payment Done', 'Payment Complete', 'Booked', "
                    "'Agreement Done', 'Cancelled', 'Refund Initiated', 'Refund Processed'.",
-        sql_hint="Use gold.fact_lead_pipeline.allotment_status for current allotment state.",
-        table="gold.fact_lead_pipeline",
+        sql_hint="Use gold.v_leads.lead_status for current lead/allotment state.",
+        table="gold.v_leads",
         category="sales",
     ),
     GlossaryEntry(
         term="site visit",
         definition="A scheduled visit by a lead to a VJ project site. "
                    "VJ Sales tracks 62,000+ site visits with project, lead, CP, and sales person details.",
-        table="gold.fact_lead_pipeline",
+        sql_hint="Use gold.v_site_visits for site visit data. Join on lead_display_id to gold.v_leads.",
+        table="gold.v_site_visits",
         category="sales",
     ),
     GlossaryEntry(
         term="conversion rate",
         definition="The percentage of leads that move from one pipeline stage to the next.",
         formula="COUNT(leads at stage N+1) / COUNT(leads at stage N) * 100",
-        sql_hint="Use gold.fact_daily_funnel_snapshot for pre-calculated rates, "
-                 "or calculate from gold.fact_lead_pipeline by comparing stage counts.",
+        sql_hint="Use gold.v_conversion_rates for pre-calculated lead-to-visit rates, "
+                 "gold.fact_daily_funnel_snapshot for historical funnel trends, "
+                 "or calculate from gold.v_leads and gold.v_site_visits.",
         table="gold.fact_daily_funnel_snapshot",
         good_range="Inquiry→Visit: 30-50%, Visit→Booking: 15-30%, Booking→Agreement: 80-95%",
         category="sales",
@@ -175,9 +177,9 @@ GLOSSARY: list[GlossaryEntry] = [
         definition="External real estate broker (CP) who refers leads to VJ. "
                    "VJ Sales tracks 2,900+ CPs with company name, RERA number, and approval status. "
                    "Also known as broker. Channel partners have FOS (field officers) under them.",
-        sql_hint="source_category = 'channel_partner' in gold.dim_lead_sources. "
-                 "For CP-specific queries, join gold.dim_lead_sources on source_key.",
-        table="gold.dim_lead_sources",
+        sql_hint="Use gold.v_channel_partners for CP details. "
+                 "For lead-level CP attribution, use gold.v_leads.channel_partner.",
+        table="gold.v_channel_partners",
         category="sales",
     ),
 
@@ -260,14 +262,14 @@ GLOSSARY: list[GlossaryEntry] = [
                    "Measured in square feet (sq. ft.). RERA-defined area. "
                    "IMPORTANT: CRM.UnitSummary does NOT reflect amended area post-booking. "
                    "Use FactUnitMovementDetail for accurate post-booking area.",
-        table="gold.dim_units",
+        table="gold.v_units",
         category="general",
     ),
     GlossaryEntry(
         term="saleable area",
         definition="The total area used for pricing calculation, which may include balcony, "
                    "terrace, and other chargeable areas beyond carpet area.",
-        table="gold.dim_units",
+        table="gold.v_units",
         category="general",
     ),
 
@@ -278,14 +280,14 @@ GLOSSARY: list[GlossaryEntry] = [
         term="project",
         definition="A real estate development by VJ. Projects are identified by BUId "
                    "(BusinessUnitId) in Farvision. Each project may have wings/towers.",
-        table="gold.dim_projects",
+        table="gold.v_projects",
         category="general",
     ),
     GlossaryEntry(
         term="RERA",
         definition="Real Estate Regulatory Authority. All projects must be registered with RERA. "
-                   "The RERA number is stored in VJ Sales App's Projects table.",
-        table="gold.dim_projects",
+                   "The RERA number is stored in gold.v_projects.rera_number.",
+        table="gold.v_projects",
         category="general",
     ),
     GlossaryEntry(

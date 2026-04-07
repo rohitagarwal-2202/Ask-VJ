@@ -75,7 +75,7 @@ SELECT
   SUM(b.net_basic_price) AS total_value,
   ROUND(AVG(b.net_basic_price), 2) AS avg_booking_value
 FROM gold.fact_bookings b
-JOIN gold.dim_projects p ON b.project_key = p.project_key
+JOIN gold.v_projects p ON b.project_key = p.project_skey
 JOIN gold.dim_date d ON d.date_key = CAST(TO_CHAR(b.booking_date, 'YYYYMMDD') AS INT)
 WHERE b.is_cancelled = false
   AND d.fiscal_year = (SELECT fiscal_year FROM gold.dim_date WHERE full_date = CURRENT_DATE)
@@ -86,22 +86,17 @@ LIMIT 1000;
 Q: "Show 3 BHK available inventory with rates"
 SQL:
 SELECT
-  p.project_name,
-  u.wing,
+  u.project_name,
+  u.wing_name,
   u.unit_no,
-  u.floor,
-  u.carpet_area,
-  i.saleable_area,
-  i.bsp AS rate_per_sqft,
-  i.total_cost
-FROM gold.snapshot_inventory i
-JOIN gold.dim_units u ON i.unit_key = u.unit_key
-JOIN gold.dim_projects p ON i.project_key = p.project_key
-JOIN gold.dim_typologies t ON i.typology_key = t.typology_key
-WHERE i.inventory_status = 'Available'
-  AND t.is_base_variant = true
-  AND t.display_name LIKE '3 BHK%'
-ORDER BY p.project_name, u.wing, u.floor
+  u.floor_no,
+  u.saleable_area,
+  u.bsp_amt AS rate_per_sqft,
+  u.total_cost_amt
+FROM gold.v_units u
+WHERE u.unit_status = 'Available'
+  AND u.display_unit_type LIKE '3 BHK%'
+ORDER BY u.project_name, u.wing_name, u.floor_no
 LIMIT 1000;
 
 Q: "Collection efficiency for this month"
@@ -115,7 +110,7 @@ SELECT
     2
   ) AS collection_efficiency_pct
 FROM gold.fact_receipts r
-JOIN gold.dim_projects p ON r.project_key = p.project_key
+JOIN gold.v_projects p ON r.project_key = p.project_skey
 JOIN gold.dim_date d ON r.date_key = d.date_key
 LEFT JOIN gold.fact_invoices inv ON r.booking_key = inv.booking_key
 WHERE d.full_date >= DATE_TRUNC('month', CURRENT_DATE)
@@ -139,7 +134,7 @@ SELECT
   SUM(o.day_amt_180) AS overdue_121_180,
   SUM(o.day_amt_more_180) AS overdue_above_180
 FROM gold.snapshot_outstanding o
-JOIN gold.dim_projects p ON o.project_key = p.project_key
+JOIN gold.v_projects p ON o.project_key = p.project_skey
 GROUP BY p.project_name
 ORDER BY total_due DESC
 LIMIT 1000;
@@ -156,7 +151,7 @@ SELECT
   o.overdue_days,
   o.day_amt_90 + o.day_amt_120 + o.day_amt_180 + o.day_amt_more_180 AS overdue_above_90
 FROM gold.snapshot_outstanding o
-JOIN gold.dim_projects p ON o.project_key = p.project_key
+JOIN gold.v_projects p ON o.project_key = p.project_skey
 WHERE (o.day_amt_90 + o.day_amt_120 + o.day_amt_180 + o.day_amt_more_180) > 0
 ORDER BY overdue_above_90 DESC
 LIMIT 1000;
@@ -185,7 +180,7 @@ SELECT
     2
   ) AS cancellation_rate_pct
 FROM gold.fact_bookings b
-JOIN gold.dim_projects p ON b.project_key = p.project_key
+JOIN gold.v_projects p ON b.project_key = p.project_skey
 JOIN gold.dim_date d ON d.date_key = CAST(TO_CHAR(b.booking_date, 'YYYYMMDD') AS INT)
 WHERE d.fiscal_year = (SELECT fiscal_year FROM gold.dim_date WHERE full_date = CURRENT_DATE)
 GROUP BY p.project_name
@@ -195,16 +190,16 @@ LIMIT 1000;
 Q: "Top 10 referrers by points earned"
 SQL:
 SELECT
-  c.customer_name,
-  c.mobile,
+  b.buyer_name,
+  b.contact_number,
   p.project_name,
   COUNT(*) AS total_referrals,
   SUM(ref.points_earned) AS total_points_earned,
   SUM(ref.points_redeemed) AS total_points_redeemed
 FROM gold.snapshot_referrals ref
-JOIN gold.dim_customers c ON ref.referrer_customer_key = c.customer_key
-LEFT JOIN gold.dim_projects p ON ref.project_key = p.project_key
-GROUP BY c.customer_name, c.mobile, p.project_name
+JOIN gold.v_buyers b ON ref.referrer_customer_key = b.buyer_skey
+LEFT JOIN gold.v_projects p ON ref.project_key = p.project_skey
+GROUP BY b.buyer_name, b.contact_number, p.project_name
 ORDER BY total_points_earned DESC
 LIMIT 10;
 
@@ -221,7 +216,7 @@ SELECT
   f.total_agreements
 FROM gold.fact_daily_funnel_snapshot f
 JOIN gold.dim_date d ON f.snapshot_date_key = d.date_key
-JOIN gold.dim_projects p ON f.project_key = p.project_key
+JOIN gold.v_projects p ON f.project_key = p.project_skey
 WHERE d.full_date = (SELECT MAX(full_date) FROM gold.dim_date WHERE full_date <= CURRENT_DATE)
 ORDER BY p.project_name
 LIMIT 1000;
@@ -229,16 +224,16 @@ LIMIT 1000;
 Q: "Which sales person has the most bookings this quarter?"
 SQL:
 SELECT
-  sp.name AS sales_person,
+  e.employee_name AS sales_person,
   COUNT(*) AS booking_count,
   SUM(b.net_basic_price) AS total_value
 FROM gold.fact_bookings b
-JOIN gold.dim_sales_persons sp ON b.sales_person_key = sp.sales_person_key
+JOIN gold.v_employees e ON b.sales_person_key = e.employee_skey
 JOIN gold.dim_date d ON d.date_key = CAST(TO_CHAR(b.booking_date, 'YYYYMMDD') AS INT)
 WHERE b.is_cancelled = false
   AND d.fiscal_quarter = (SELECT fiscal_quarter FROM gold.dim_date WHERE full_date = CURRENT_DATE)
   AND d.fiscal_year = (SELECT fiscal_year FROM gold.dim_date WHERE full_date = CURRENT_DATE)
-GROUP BY sp.name
+GROUP BY e.employee_name
 ORDER BY booking_count DESC
 LIMIT 1000;
 
@@ -246,15 +241,15 @@ Q: "Agreements done but not yet registered"
 SQL:
 SELECT
   p.project_name,
-  c.customer_name,
+  buy.buyer_name,
   u.unit_no,
   b.agreement_date,
   b.agreement_no,
   b.net_basic_price
 FROM gold.fact_bookings b
-JOIN gold.dim_projects p ON b.project_key = p.project_key
-JOIN gold.dim_customers c ON b.customer_key = c.customer_key
-JOIN gold.dim_units u ON b.unit_key = u.unit_key
+JOIN gold.v_projects p ON b.project_key = p.project_skey
+JOIN gold.v_buyers buy ON b.customer_key = buy.buyer_skey
+JOIN gold.v_units u ON b.unit_key = u.project_unit_skey
 WHERE b.agreement_date IS NOT NULL
   AND b.registration_date IS NULL
   AND b.is_cancelled = false
