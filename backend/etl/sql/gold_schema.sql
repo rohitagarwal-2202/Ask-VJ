@@ -1,20 +1,26 @@
 -- ============================================================
--- ASK VJ: Gold Layer Schema (Business-Ready Star Schema)
+-- ASK VJ: Gold Layer Schema (Business-Facing View Layer)
 -- ============================================================
--- Built from real column structures discovered in:
---   - Farvision ERP (CRMG schema: DimCustomerDetail, FactBooking,
---     FactReceipt, FactDueDatewiseOutstanding, DimUnit, etc.)
---   - VJ Sales App (leads, allotment_payments, inventory)
---   - VJOP (referrals, loyalty points)
+-- The Gold layer is a thin, LLM-friendly view layer over the
+-- Silver dimensional model.  Most "tables" here are views that
+-- pre-join Silver dimensions and facts so the LLM can write
+-- simple single-table SELECTs.
 --
--- Optimized for LLM SQL generation. Self-documenting names.
--- Simple JOINs only via surrogate keys.
+-- Tables that remain as physical Gold tables:
+--   - dim_date          (backward compat for existing fact FKs)
+--   - fact_bookings     (Farvision — no Silver equivalent yet)
+--   - fact_receipts     (Farvision — no Silver equivalent yet)
+--   - fact_invoices     (Farvision — no Silver equivalent yet)
+--   - snapshot_outstanding  (Farvision aging)
+--   - snapshot_inventory    (VJ Sales pricing — will move to Silver)
+--   - snapshot_referrals    (VJOP — will move to Silver)
+--   - fact_daily_funnel_snapshot (aggregated counts)
 -- ============================================================
 
 CREATE SCHEMA IF NOT EXISTS gold;
 
 -- ============================================================
--- DIMENSION: Date (supports natural language time filtering)
+-- DIMENSION: Date (kept for existing fact table FK references)
 -- Source: Generated calendar table
 -- ============================================================
 CREATE TABLE IF NOT EXISTS gold.dim_date (
@@ -39,209 +45,172 @@ COMMENT ON TABLE gold.dim_date IS
     'Calendar dimension with Indian fiscal year support. Grain: one row per date. '
     'Generated, not extracted. FiscalYearId: 56=FY2025-26, 52=FY2024-25. Owner: Platform.';
 
--- ============================================================
--- DIMENSION: Projects
--- Source: Farvision DimProject / BusinessUnit mapping
--- bu_id is the Farvision BusinessUnitId — the universal project
--- key that connects across all Farvision tables.
--- ============================================================
-CREATE TABLE IF NOT EXISTS gold.dim_projects (
-    project_key SERIAL PRIMARY KEY,
-    bu_id INT NOT NULL,                    -- Farvision BusinessUnitId (universal project key)
-    project_name VARCHAR(255) NOT NULL,    -- Canonical name from crosswalk
-    phase_name VARCHAR(100),
-    segment VARCHAR(100),                  -- Residential, Commercial, etc.
-    project_type VARCHAR(100),             -- High-rise, Plotted, Township, etc.
-    total_units INT,
-    launch_date DATE,
-    status VARCHAR(50),                    -- active, completed, upcoming
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-);
-
-COMMENT ON TABLE gold.dim_projects IS
-    'VJ real estate projects. Grain: one row per project/phase. '
-    'bu_id = Farvision BusinessUnitId (universal project key). '
-    'Source: silver.project_crosswalk + Farvision ENGG.DimBusinessUnit. Owner: Operations.';
-
-CREATE UNIQUE INDEX IF NOT EXISTS idx_dim_projects_bu_id
-    ON gold.dim_projects (bu_id);
+-- ############################################################
+--  VIEWS — thin business-facing layer over Silver tables
+-- ############################################################
 
 -- ============================================================
--- DIMENSION: Typologies
--- Source: Farvision DimTypology
--- Maps Farvision TypologyId to readable names. Variants like
--- "3.00BHK XL" or "3.00BHK XR" share a base typology "3 BHK".
+-- VIEW: Projects (human-readable from Silver)
 -- ============================================================
-CREATE TABLE IF NOT EXISTS gold.dim_typologies (
-    typology_key SERIAL PRIMARY KEY,
-    typology_id INT,                       -- Farvision TypologyId
-    typology_code VARCHAR(50),             -- Source code e.g. "3BHK-XL"
-    typology VARCHAR(50),                  -- Raw value e.g. "3.00BHK"
-    display_name VARCHAR(50),              -- Human-friendly e.g. "3 BHK"
-    is_base_variant BOOLEAN DEFAULT TRUE   -- true for base 3BHK, false for XL/XR variants
-);
-
-COMMENT ON TABLE gold.dim_typologies IS
-    'Unit type classification (1BHK, 2BHK, 3BHK, etc). Grain: one row per typology variant. '
-    'is_base_variant=true for base types, false for XL/XR variants. '
-    'For "3 BHK" queries use is_base_variant=true. Source: Farvision CRMG.DimTypologyMaster. Owner: Sales.';
-
-CREATE UNIQUE INDEX IF NOT EXISTS idx_dim_typologies_typology_id
-    ON gold.dim_typologies (typology_id);
+CREATE OR REPLACE VIEW gold.v_projects AS
+SELECT
+    p.project_skey,
+    p.bu_id,
+    p.project_name,
+    p.project_type,
+    p.rera_number,
+    p.city,
+    p.state,
+    p.is_completed,
+    p.is_active
+FROM silver.dim_project p;
 
 -- ============================================================
--- DIMENSION: Units (individual flats/shops)
--- Source: Farvision DimUnit + VJ Sales Inventory
+-- VIEW: Units (joins project + unit for flat queries)
 -- ============================================================
-CREATE TABLE IF NOT EXISTS gold.dim_units (
-    unit_key SERIAL PRIMARY KEY,
-    farvision_unit_id INT,                 -- Farvision DimUnit.UnitId
-    project_key INT NOT NULL REFERENCES gold.dim_projects,
-    typology_key INT REFERENCES gold.dim_typologies,
-    unit_no VARCHAR(50) NOT NULL,
-    wing VARCHAR(50),
-    floor INT,
-    unit_status INT,                       -- Farvision status: 1=sold, 2=available, 3=blocked
-    farvision_status VARCHAR(50),          -- Raw status label from Farvision
-    saleable_area DECIMAL(10, 2),
-    carpet_area DECIMAL(10, 2),
-    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-);
-
-COMMENT ON TABLE gold.dim_units IS
-    'Individual flats/shops/offices. Grain: one row per unit. unit_status: 1=sold, 2=available, 3=blocked. '
-    'Source: Farvision CRMG.DimUnitMaster + VJ Sales Inventory. Owner: Sales.';
-
-CREATE INDEX IF NOT EXISTS idx_dim_units_project
-    ON gold.dim_units (project_key);
-CREATE INDEX IF NOT EXISTS idx_dim_units_typology
-    ON gold.dim_units (typology_key);
-CREATE UNIQUE INDEX IF NOT EXISTS idx_dim_units_farvision
-    ON gold.dim_units (farvision_unit_id);
-CREATE INDEX IF NOT EXISTS idx_dim_units_status
-    ON gold.dim_units (unit_status);
+CREATE OR REPLACE VIEW gold.v_units AS
+SELECT
+    pu.project_unit_skey,
+    p.project_name,
+    p.bu_id,
+    pu.wing_name,
+    pu.floor_no,
+    pu.unit_no,
+    pu.unit_type,
+    pu.display_unit_type,
+    pu.unit_status,
+    pu.saleable_area,
+    pu.chargeable_area,
+    pu.total_cost_amt,
+    pu.bsp_amt,
+    pu.fv_status,
+    pu.fv_unit_id
+FROM silver.dim_project_unit pu
+JOIN silver.dim_project p ON pu.project_skey = p.project_skey;
 
 -- ============================================================
--- DIMENSION: Customers (unified from Farvision + VJ Sales)
--- Source: Farvision CRMG.DimCustomerDetail + VJ Sales Person
--- Linked via silver.entity_map for cross-system identity.
+-- VIEW: Buyers (human-readable customer view)
 -- ============================================================
-CREATE TABLE IF NOT EXISTS gold.dim_customers (
-    customer_key SERIAL PRIMARY KEY,
-    unified_customer_id UUID NOT NULL,     -- From silver.entity_map
-    farvision_ledger_id INT,               -- Farvision Ledger/CustomerId
-    full_name VARCHAR(255),
-    customer_name VARCHAR(255),            -- Display name
-    phone VARCHAR(50),
-    mobile VARCHAR(50),
-    email VARCHAR(255),
-    pan_number VARCHAR(20),
-    first_inquiry_date DATE,
-    lead_source VARCHAR(100),
-    source_system_origin VARCHAR(20),      -- Where first seen: vjsales, farvision
-    is_active BOOLEAN DEFAULT TRUE,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-);
-
-COMMENT ON TABLE gold.dim_customers IS
-    'Unified customer records linked across systems via silver.entity_map. '
-    'Grain: one row per customer. Source: Farvision DimCustomerDetail + VJ Sales Person. Owner: Sales.';
-
-CREATE UNIQUE INDEX IF NOT EXISTS idx_dim_customers_unified
-    ON gold.dim_customers (unified_customer_id);
-CREATE INDEX IF NOT EXISTS idx_dim_customers_farvision
-    ON gold.dim_customers (farvision_ledger_id);
-CREATE INDEX IF NOT EXISTS idx_dim_customers_mobile
-    ON gold.dim_customers (mobile);
+CREATE OR REPLACE VIEW gold.v_buyers AS
+SELECT
+    b.buyer_skey,
+    b.buyer_id,
+    b.name AS buyer_name,
+    b.contact_number,
+    b.email,
+    b.gender,
+    b.pan,
+    b.rm_name,
+    b.is_verified
+FROM silver.dim_buyer b;
 
 -- ============================================================
--- DIMENSION: Sales Persons
--- Source: Farvision SalesPerson + VJ Sales App users
+-- VIEW: Employees
 -- ============================================================
-CREATE TABLE IF NOT EXISTS gold.dim_sales_persons (
-    sales_person_key SERIAL PRIMARY KEY,
-    farvision_sales_person_id INT,         -- Farvision SalesPersonId
-    name VARCHAR(255) NOT NULL,
-    team VARCHAR(100),
-    region VARCHAR(100),
-    is_active BOOLEAN DEFAULT TRUE
-);
-
-COMMENT ON TABLE gold.dim_sales_persons IS
-    'Sales team members. Grain: one row per sales person. Source: Farvision DimBookingMaster. Owner: Sales.';
-
-CREATE UNIQUE INDEX IF NOT EXISTS idx_dim_sales_persons_farvision
-    ON gold.dim_sales_persons (farvision_sales_person_id);
+CREATE OR REPLACE VIEW gold.v_employees AS
+SELECT
+    e.employee_skey,
+    e.employee_name,
+    e.email,
+    e.role_name,
+    e.crm_designation,
+    e.is_active
+FROM silver.dim_employee e;
 
 -- ============================================================
--- DIMENSION: Lead Sources
--- Source: VJ Sales App lead_sources + channel partner records
+-- VIEW: Channel Partners
 -- ============================================================
-CREATE TABLE IF NOT EXISTS gold.dim_lead_sources (
-    source_key SERIAL PRIMARY KEY,
-    source_name VARCHAR(100) NOT NULL,     -- walk-in, referral, digital-fb, digital-google, CP-BrokerName
-    source_category VARCHAR(50),           -- organic, paid, referral, channel_partner
-    channel_partner_name VARCHAR(255),     -- NULL if not channel partner
-    cp_id UUID                             -- Channel partner reference UUID
-);
-
-COMMENT ON TABLE gold.dim_lead_sources IS
-    'Lead acquisition channels. Grain: one row per source. Source: VJ Sales App + CP records. Owner: Marketing.';
-
-CREATE UNIQUE INDEX IF NOT EXISTS idx_dim_lead_sources_source_name
-    ON gold.dim_lead_sources (source_name);
-CREATE INDEX IF NOT EXISTS idx_dim_lead_sources_cp
-    ON gold.dim_lead_sources (cp_id);
+CREATE OR REPLACE VIEW gold.v_channel_partners AS
+SELECT
+    cp.channel_partner_skey,
+    cp.cp_display_id,
+    cp.cp_type,
+    cp.billing_name,
+    cp.approval_status,
+    cp.is_disabled
+FROM silver.dim_channel_partner cp;
 
 -- ============================================================
--- FACT: Lead Pipeline (every stage transition)
--- Source: VJ Sales App leads + allotment_payments
--- Tracks the journey from inquiry through site visit,
--- negotiation, booking, agreement, registration or cancellation.
+-- VIEW: Leads (pre-joined with all dimensions for easy querying)
 -- ============================================================
-CREATE TABLE IF NOT EXISTS gold.fact_lead_pipeline (
-    pipeline_event_id SERIAL PRIMARY KEY,
-    vjsales_lead_id UUID,                  -- VJ Sales App lead UUID
-    vjsales_allotment_id UUID,             -- VJ Sales AllotmentPayment UUID
-    customer_key INT REFERENCES gold.dim_customers,
-    project_key INT REFERENCES gold.dim_projects,
-    unit_key INT REFERENCES gold.dim_units,
-    sales_person_key INT REFERENCES gold.dim_sales_persons,
-    source_key INT REFERENCES gold.dim_lead_sources,
-    event_date_key INT REFERENCES gold.dim_date,
+CREATE OR REPLACE VIEW gold.v_leads AS
+SELECT
+    fl.fact_lead_skey,
+    fl.lead_id,
+    fl.lead_display_id,
+    fl.display_dt AS lead_date,
+    b.name AS buyer_name,
+    b.contact_number AS buyer_phone,
+    p.project_name,
+    p.bu_id,
+    cp.billing_name AS channel_partner,
+    fos.name AS fos_name,
+    ph.employee_name AS project_head,
+    sm.employee_name AS sales_manager,
+    cb.employee_name AS claimed_by,
+    ls.lov_value AS lead_status,
+    lt.lov_value AS lead_type,
+    lst.lov_value AS lead_sub_type,
+    lc.lov_value AS lead_category,
+    lr.lov_value AS lead_response,
+    fl.src_created_ts,
+    fl.src_updated_ts
+FROM silver.fact_lead fl
+LEFT JOIN silver.dim_buyer b ON fl.buyer_skey = b.buyer_skey
+LEFT JOIN silver.dim_project p ON fl.project_skey = p.project_skey
+LEFT JOIN silver.dim_channel_partner cp ON fl.channel_partner_skey = cp.channel_partner_skey
+LEFT JOIN silver.dim_channel_partner_fos fos ON fl.channel_partner_fos_skey = fos.channel_partner_fos_skey
+LEFT JOIN silver.dim_employee ph ON fl.project_head_employee_skey = ph.employee_skey
+LEFT JOIN silver.dim_employee sm ON fl.sales_manager_employee_skey = sm.employee_skey
+LEFT JOIN silver.dim_employee cb ON fl.claimed_by_employee_skey = cb.employee_skey
+LEFT JOIN silver.dim_lov ls ON fl.lead_status_lov_skey = ls.lov_skey
+LEFT JOIN silver.dim_lov lt ON fl.lead_type_lov_skey = lt.lov_skey
+LEFT JOIN silver.dim_lov lst ON fl.lead_sub_type_lov_skey = lst.lov_skey
+LEFT JOIN silver.dim_lov lc ON fl.lead_category_lov_skey = lc.lov_skey
+LEFT JOIN silver.dim_lov lr ON fl.lead_response_lov_skey = lr.lov_skey;
 
-    -- Pipeline stage this event represents
-    pipeline_stage VARCHAR(50) NOT NULL,   -- inquiry, site_visit, negotiation, booking, agreement, registered, cancelled
-    previous_stage VARCHAR(50),
-    days_in_previous_stage INT,
+-- ============================================================
+-- VIEW: Site Visits (pre-joined)
+-- ============================================================
+CREATE OR REPLACE VIEW gold.v_site_visits AS
+SELECT
+    sv.fact_site_visit_skey,
+    sv.site_visit_id,
+    fl.lead_display_id,
+    b.name AS buyer_name,
+    p.project_name,
+    e.employee_name AS accompanied_by,
+    cp.billing_name AS channel_partner,
+    c.calendar_dt AS visit_date,
+    sv.site_visit_ts,
+    sv.mode,
+    sv.remarks
+FROM silver.fact_site_visit sv
+LEFT JOIN silver.fact_lead fl ON sv.fact_lead_skey = fl.fact_lead_skey
+LEFT JOIN silver.dim_buyer b ON fl.buyer_skey = b.buyer_skey
+LEFT JOIN silver.dim_project p ON sv.project_skey = p.project_skey
+LEFT JOIN silver.dim_employee e ON sv.employee_skey = e.employee_skey
+LEFT JOIN silver.dim_channel_partner cp ON sv.channel_partner_skey = cp.channel_partner_skey
+LEFT JOIN silver.dim_calendar c ON sv.site_visit_dt_skey = c.calendar_skey;
 
-    -- Allotment status from VJ Sales AllotmentPayment
-    allotment_status VARCHAR(50),          -- 'Payment Complete','Agreement Done','Booked','Cancelled', etc.
+-- ============================================================
+-- VIEW: Conversion Rates (computed from Silver lead/visit counts)
+-- ============================================================
+CREATE OR REPLACE VIEW gold.v_conversion_rates AS
+SELECT
+    p.project_name,
+    p.bu_id,
+    COUNT(DISTINCT fl.lead_id) AS total_leads,
+    COUNT(DISTINCT sv.site_visit_id) AS total_site_visits,
+    ROUND(COUNT(DISTINCT sv.site_visit_id) * 100.0 / NULLIF(COUNT(DISTINCT fl.lead_id), 0), 2) AS lead_to_visit_rate
+FROM silver.fact_lead fl
+LEFT JOIN silver.dim_project p ON fl.project_skey = p.project_skey
+LEFT JOIN silver.fact_site_visit sv ON fl.fact_lead_skey = sv.fact_lead_skey
+GROUP BY p.project_name, p.bu_id;
 
-    -- Booking/Agreement details (NULL until relevant stage)
-    agreement_value DECIMAL(15, 2),
-    booking_amount DECIMAL(15, 2),
-
-    event_timestamp TIMESTAMP WITH TIME ZONE,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-);
-
-COMMENT ON TABLE gold.fact_lead_pipeline IS
-    'Lead lifecycle stage transitions. Grain: one row per stage change per lead. '
-    'Append-only. Source: VJ Sales App leads + allotments. Owner: Sales.';
-
-CREATE INDEX IF NOT EXISTS idx_fact_pipeline_date
-    ON gold.fact_lead_pipeline (event_date_key);
-CREATE INDEX IF NOT EXISTS idx_fact_pipeline_project
-    ON gold.fact_lead_pipeline (project_key);
-CREATE INDEX IF NOT EXISTS idx_fact_pipeline_stage
-    ON gold.fact_lead_pipeline (pipeline_stage);
-CREATE INDEX IF NOT EXISTS idx_fact_pipeline_customer
-    ON gold.fact_lead_pipeline (customer_key);
-CREATE INDEX IF NOT EXISTS idx_fact_pipeline_allotment_status
-    ON gold.fact_lead_pipeline (allotment_status);
+-- ############################################################
+--  TABLES — Farvision financials (no Silver equivalent yet)
+-- ############################################################
 
 -- ============================================================
 -- FACT: Bookings (one row per booking)
@@ -394,11 +363,13 @@ CREATE INDEX IF NOT EXISTS idx_fact_invoices_date
 CREATE INDEX IF NOT EXISTS idx_fact_invoices_due_date
     ON gold.fact_invoices (due_date);
 
+-- ############################################################
+--  SNAPSHOT TABLES — daily-reload tables still in Gold
+-- ############################################################
+
 -- ============================================================
 -- SNAPSHOT: Outstanding (aging buckets for overdue amounts)
 -- Source: Farvision CRMG.FactDueDatewiseOutstanding
--- Pre-aggregated aging analysis per customer+unit. Used for
--- collections dashboards and overdue reporting.
 -- TRUNCATE-reload daily — NOT an append-only fact.
 -- ============================================================
 CREATE TABLE IF NOT EXISTS gold.snapshot_outstanding (
@@ -451,8 +422,7 @@ CREATE INDEX IF NOT EXISTS idx_snapshot_outstanding_overdue
 -- ============================================================
 -- SNAPSHOT: Inventory (available unit pricing and status)
 -- Source: VJ Sales App Inventory tables
--- Current state of each unit in the sales inventory,
--- including pricing and availability status.
+-- Will eventually move to Silver.
 -- TRUNCATE-reload daily — NOT an append-only fact.
 -- ============================================================
 CREATE TABLE IF NOT EXISTS gold.snapshot_inventory (
@@ -489,9 +459,7 @@ CREATE INDEX IF NOT EXISTS idx_snapshot_inventory_status
 -- ============================================================
 -- SNAPSHOT: Referrals (VJOP loyalty referral tracking)
 -- Source: VJOP leads + lead_allotments + loyalty_points
--- Tracks customer-to-customer referrals from the owner portal.
--- Referral lifecycle: Unclaimed → Claimed → Site Visit Done →
--- Agreement Done, with points earned at each milestone.
+-- Will eventually move to Silver.
 -- TRUNCATE-reload daily — NOT an append-only fact.
 -- ============================================================
 CREATE TABLE IF NOT EXISTS gold.snapshot_referrals (
@@ -532,11 +500,14 @@ CREATE INDEX IF NOT EXISTS idx_snapshot_referrals_status
 CREATE INDEX IF NOT EXISTS idx_snapshot_referrals_vjop_lead
     ON gold.snapshot_referrals (vjop_lead_id);
 
+-- ############################################################
+--  AGGREGATED FACT TABLE
+-- ############################################################
+
 -- ============================================================
 -- FACT: Daily Funnel Snapshot (for trend analysis)
 -- Source: Aggregated daily from fact_lead_pipeline + fact_bookings
 -- Pre-computed daily counts per project for fast dashboard queries.
--- Conversion rates are computed via gold.v_conversion_rates view.
 -- ============================================================
 CREATE TABLE IF NOT EXISTS gold.fact_daily_funnel_snapshot (
     snapshot_id SERIAL PRIMARY KEY,
@@ -564,30 +535,3 @@ CREATE INDEX IF NOT EXISTS idx_fact_funnel_date
     ON gold.fact_daily_funnel_snapshot (snapshot_date_key);
 CREATE INDEX IF NOT EXISTS idx_fact_funnel_project
     ON gold.fact_daily_funnel_snapshot (project_key);
-
--- ============================================================
--- VIEW: Conversion Rates (derived from funnel counts)
--- Computed on-the-fly to avoid storing derived metrics in facts.
--- ============================================================
-CREATE OR REPLACE VIEW gold.v_conversion_rates AS
-SELECT
-    f.snapshot_date_key,
-    f.project_key,
-    p.project_name,
-    d.full_date AS snapshot_date,
-    f.total_inquiries,
-    f.total_site_visits,
-    f.total_bookings,
-    f.total_agreements,
-    ROUND(
-        f.total_site_visits * 100.0 / NULLIF(f.total_inquiries, 0), 2
-    ) AS inquiry_to_visit_rate,
-    ROUND(
-        f.total_bookings * 100.0 / NULLIF(f.total_site_visits, 0), 2
-    ) AS visit_to_booking_rate,
-    ROUND(
-        f.total_agreements * 100.0 / NULLIF(f.total_bookings, 0), 2
-    ) AS booking_to_agreement_rate
-FROM gold.fact_daily_funnel_snapshot f
-JOIN gold.dim_projects p ON f.project_key = p.project_key
-JOIN gold.dim_date d ON f.snapshot_date_key = d.date_key;
