@@ -44,13 +44,14 @@ class TestDimensionTransformer:
     def test_dim_transformer_transform_all_calls_all_builders(self, dim_transformer):
         """Verify transform_all invokes every dimension builder method."""
         builder_names = [
-            "build_dim_date",
-            "build_dim_projects",
-            "build_dim_typologies",
-            "build_dim_units",
-            "build_dim_customers",
-            "build_dim_sales_persons",
-            "build_dim_lead_sources",
+            "build_dim_calendar",
+            "build_dim_country",
+            "build_dim_project",
+            "build_dim_project_unit",
+            "build_dim_employee",
+            "build_dim_channel_partner",
+            "build_dim_channel_partner_fos",
+            "build_dim_buyer",
         ]
         for name in builder_names:
             setattr(dim_transformer, name, MagicMock(name=name))
@@ -106,18 +107,12 @@ class TestDimensionTransformer:
                 f"got {fiscal_quarter}"
             )
 
-    def test_dim_date_fiscal_year_id_mapping(self):
-        """
-        Known FiscalYearId mappings: 2026 -> 56, 2025 -> 52, other -> None.
-        """
-        FISCAL_YEAR_ID_MAP = {
-            2026: 56,
-            2025: 52,
-        }
-        assert FISCAL_YEAR_ID_MAP.get(2026) == 56
-        assert FISCAL_YEAR_ID_MAP.get(2025) == 52
-        assert FISCAL_YEAR_ID_MAP.get(2024) is None
-        assert FISCAL_YEAR_ID_MAP.get(2027) is None
+    def test_dim_calendar_skey_format(self):
+        """Calendar skey should be YYYYMMDD string format."""
+        d = date(2025, 4, 1)
+        skey = d.strftime("%Y%m%d")
+        assert skey == "20250401"
+        assert isinstance(skey, str)
 
 
 # ──────────────────────────────────────────────────────────────────────
@@ -127,9 +122,10 @@ class TestDimensionTransformer:
 class TestFactTransformer:
 
     def test_fact_transformer_transform_all_calls_all_builders(self, fact_transformer):
-        """Verify transform_all invokes all 7 builder methods."""
+        """Verify transform_all invokes all 8 builder methods."""
         builder_names = [
-            "build_fact_lead_pipeline",
+            "build_fact_lead",
+            "build_fact_site_visit",
             "build_fact_bookings",
             "build_fact_receipts",
             "build_fact_invoices",
@@ -150,15 +146,15 @@ class TestFactTransformer:
         from backend.etl.transformers.facts import FARVISION_TENANT_ID
         assert FARVISION_TENANT_ID == 75
 
-    def test_fact_transformer_has_seven_builders(self, fact_transformer):
-        """Verify the transformer has exactly 7 build_ methods (4 fact + 3 snapshot)."""
+    def test_fact_transformer_has_eight_builders(self, fact_transformer):
+        """Verify the transformer has exactly 8 build_ methods (5 fact + 3 snapshot)."""
         build_methods = [
             m for m in dir(fact_transformer)
             if (m.startswith("build_fact_") or m.startswith("build_snapshot_"))
             and callable(getattr(fact_transformer, m))
         ]
-        assert len(build_methods) == 7, (
-            f"Expected 7 builders, found {len(build_methods)}: {build_methods}"
+        assert len(build_methods) == 8, (
+            f"Expected 8 builders, found {len(build_methods)}: {build_methods}"
         )
 
 
