@@ -567,7 +567,7 @@ COMMENT ON TABLE silver.dim_buyer IS 'Unified buyer/customer. buyer_id = VJ Sale
 -- ============================================================
 CREATE TABLE IF NOT EXISTS silver.fact_lead (
     fact_lead_skey UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-    lead_id UUID,
+    lead_id UUID UNIQUE,
     buyer_skey UUID REFERENCES silver.dim_buyer(buyer_skey),
     project_skey UUID REFERENCES silver.dim_project(project_skey),
     channel_partner_skey UUID REFERENCES silver.dim_channel_partner(channel_partner_skey),
@@ -608,7 +608,7 @@ CREATE INDEX IF NOT EXISTS idx_fact_lead_status ON silver.fact_lead (lead_status
 -- ============================================================
 CREATE TABLE IF NOT EXISTS silver.fact_site_visit (
     fact_site_visit_skey UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-    site_visit_id UUID,
+    site_visit_id UUID UNIQUE,
     fact_lead_skey UUID REFERENCES silver.fact_lead(fact_lead_skey),
     project_skey UUID REFERENCES silver.dim_project(project_skey),
     employee_skey UUID REFERENCES silver.dim_employee(employee_skey),

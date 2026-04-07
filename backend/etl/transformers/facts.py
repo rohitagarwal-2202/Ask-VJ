@@ -1,5 +1,17 @@
 """
-Fact Transformers — Build gold.fact_* tables from bronze + silver data.
+Fact Transformers — Build Silver + Gold fact tables from bronze data.
+
+Silver facts (VJ Sales App leads & site visits):
+  - silver.fact_lead       — one row per lead
+  - silver.fact_site_visit — one row per site visit
+
+Gold facts (Farvision ERP — no Silver equivalent yet):
+  - gold.fact_bookings          — one row per booking
+  - gold.fact_receipts          — one row per receipt
+  - gold.fact_invoices          — one row per invoice
+  - gold.snapshot_outstanding   — daily aging snapshot
+  - gold.snapshot_inventory     — daily inventory snapshot
+  - gold.snapshot_referrals     — daily referral snapshot
 
 Sources:
   - Farvision ERP (bronze.stg_fv_*)  — TenantId = 75
@@ -18,7 +30,7 @@ FARVISION_TENANT_ID = 75
 
 
 class FactTransformer:
-    """Builds and updates gold-layer fact tables."""
+    """Builds and updates Silver + Gold fact tables."""
 
     def __init__(self, warehouse_connection_string: str):
         self.engine: Engine = create_engine(warehouse_connection_string)
@@ -28,7 +40,10 @@ class FactTransformer:
     # ------------------------------------------------------------------
     def transform_all(self):
         """Run all fact transformations in dependency order."""
-        self.build_fact_lead_pipeline()
+        # Silver facts (VJ Sales App)
+        self.build_fact_lead()
+        self.build_fact_site_visit()
+        # Gold facts (Farvision — no Silver equivalent yet)
         self.build_fact_bookings()
         self.build_fact_receipts()
         self.build_fact_invoices()
@@ -37,176 +52,320 @@ class FactTransformer:
         self.build_snapshot_referrals()
 
     # ==================================================================
-    # 1. fact_lead_pipeline  (VJ Sales leads → pipeline events)
+    # 1. fact_lead  (Silver — VJ Sales leads)
     # ==================================================================
-    def build_fact_lead_pipeline(self):
+    def build_fact_lead(self):
         """
-        Build gold.fact_lead_pipeline from VJ Sales leads, statuses,
-        allotments, and site visits.
+        Build silver.fact_lead from bronze.stg_vj_leads.
 
-        - Lead status gives the latest pipeline_stage per lead.
-        - Site visits are separate events.
-        - Allotment payments carry booking/agreement values.
-        - Timestamps are epoch MILLISECONDS → to_timestamp(x/1000).
-        - Customer linkage via silver.entity_map (vjsales_lead_id).
-        - Project linkage via stg_vj_projects."buId" → dim_projects.bu_id.
+        Dimension lookups (all against Silver dimensions):
+          - buyer_skey:            stg_vj_leads.personId → dim_buyer.buyer_id
+          - project_skey:          lead → site_visit → stg_vj_projects.buId → dim_project.bu_id
+          - channel_partner_skey:  stg_vj_leads.cpId → dim_channel_partner.cp_id
+          - lead_dt_skey:          epoch ms → YYYYMMDD → dim_calendar.calendar_skey
+          - LOV lookups:           status/type/category/response → dim_lov(lov_type, lov_value)
+
+        Timestamps are epoch MILLISECONDS → to_timestamp(x/1000).
+        Upserts on lead_id (UNIQUE constraint required on silver.fact_lead.lead_id).
         """
         with self.engine.begin() as conn:
-            inquiry_count = self._insert_inquiry_events(conn)
-            visit_count = self._insert_site_visit_events(conn)
-            allotment_count = self._insert_allotment_events(conn)
-            logger.info(
-                "fact_lead_pipeline: +%d inquiries, +%d visits, +%d allotments",
-                inquiry_count, visit_count, allotment_count,
-            )
-
-    def _insert_inquiry_events(self, conn) -> int:
-        """Insert inquiry-stage events for leads (latest status per lead)."""
-        query = text("""
-            INSERT INTO gold.fact_lead_pipeline (
-                vjsales_lead_id, customer_key, project_key,
-                source_key, event_date_key,
-                pipeline_stage, event_timestamp
-            )
-            SELECT
-                l."leadId",
-                dc.customer_key,
-                dp.project_key,
-                dls.source_key,
-                TO_CHAR(to_timestamp(l.created_at / 1000), 'YYYYMMDD')::INT,
-                COALESCE(ls.status, 'inquiry'),
-                to_timestamp(l.created_at / 1000)
-            FROM bronze.stg_vj_leads l
-            -- latest sync per lead
-            INNER JOIN (
-                SELECT "leadId", MAX(_sync_id) AS max_sync
-                FROM bronze.stg_vj_leads
-                GROUP BY "leadId"
-            ) ld ON l."leadId" = ld."leadId" AND l._sync_id = ld.max_sync
-            -- latest status per lead
-            LEFT JOIN LATERAL (
-                SELECT ls2.status
-                FROM bronze.stg_vj_lead_status ls2
-                WHERE ls2."leadId" = l."leadId"
-                ORDER BY ls2._sync_id DESC
-                LIMIT 1
-            ) ls ON TRUE
-            -- customer via entity_map
-            LEFT JOIN silver.entity_map em
-                ON em.vjsales_lead_id = l."leadId"
-            LEFT JOIN gold.dim_customers dc
-                ON dc.unified_customer_id = em.unified_customer_id
-            -- project via stg_vj_projects buId
-            LEFT JOIN bronze.stg_vj_projects vp
-                ON vp."projectId" = (
-                    SELECT sv."projectId"
-                    FROM bronze.stg_vj_site_visits sv
-                    WHERE sv."leadId" = l."leadId"
-                    ORDER BY sv._sync_id DESC
-                    LIMIT 1
+            query = text("""
+                INSERT INTO silver.fact_lead (
+                    fact_lead_skey,
+                    lead_id,
+                    buyer_skey,
+                    project_skey,
+                    channel_partner_skey,
+                    channel_partner_fos_skey,
+                    lead_dt_skey,
+                    project_head_employee_skey,
+                    sales_manager_employee_skey,
+                    claimed_by_employee_skey,
+                    referred_by_employee_skey,
+                    external_referrer_skey,
+                    referred_by_buyer_skey,
+                    lead_status_lov_skey,
+                    lead_type_lov_skey,
+                    lead_sub_type_lov_skey,
+                    lead_category_lov_skey,
+                    lead_response_lov_skey,
+                    verification_status_lov_skey,
+                    referrer_type_lov_skey,
+                    lead_display_id,
+                    display_dt,
+                    src_created_dt,
+                    src_created_ts,
+                    src_updated_ts,
+                    dw_load_ts,
+                    dw_created_by
                 )
-            LEFT JOIN gold.dim_projects dp
-                ON dp.bu_id = vp."buId"
-            -- lead source
-            LEFT JOIN gold.dim_lead_sources dls
-                ON dls.source_name = l."leadType"
-            WHERE l.created_at IS NOT NULL
-            ON CONFLICT DO NOTHING
-        """)
-        result = conn.execute(query)
-        return result.rowcount
+                SELECT
+                    gen_random_uuid(),
+                    l."leadId",
+                    db.buyer_skey,
+                    dp.project_skey,
+                    dcp.channel_partner_skey,
+                    dfos.channel_partner_fos_skey,
+                    TO_CHAR(to_timestamp(l.created_at / 1000), 'YYYYMMDD'),
+                    ph.employee_skey,
+                    sm.employee_skey,
+                    cb.employee_skey,
+                    ref_emp.employee_skey,
+                    dxr.external_referrer_skey,
+                    ref_buyer.buyer_skey,
+                    lov_status.lov_skey,
+                    lov_type.lov_skey,
+                    lov_sub_type.lov_skey,
+                    lov_category.lov_skey,
+                    lov_response.lov_skey,
+                    lov_verif.lov_skey,
+                    lov_ref_type.lov_skey,
+                    l."leadDisplayId",
+                    (to_timestamp(l.created_at / 1000))::DATE,
+                    (to_timestamp(l.created_at / 1000))::DATE,
+                    to_timestamp(l.created_at / 1000),
+                    to_timestamp(l.updated_at / 1000),
+                    CURRENT_TIMESTAMP,
+                    'etl_pipeline'
+                FROM bronze.stg_vj_leads l
+                -- latest sync per lead
+                INNER JOIN (
+                    SELECT "leadId", MAX(_sync_id) AS max_sync
+                    FROM bronze.stg_vj_leads
+                    GROUP BY "leadId"
+                ) ld ON l."leadId" = ld."leadId" AND l._sync_id = ld.max_sync
 
-    def _insert_site_visit_events(self, conn) -> int:
-        """Insert site_visit events from stg_vj_site_visits."""
-        query = text("""
-            INSERT INTO gold.fact_lead_pipeline (
-                vjsales_lead_id, customer_key, project_key,
-                event_date_key, pipeline_stage,
-                previous_stage, event_timestamp
-            )
-            SELECT
-                sv."leadId",
-                dc.customer_key,
-                dp.project_key,
-                TO_CHAR(to_timestamp(sv.created_at / 1000), 'YYYYMMDD')::INT,
-                'site_visit',
-                'inquiry',
-                to_timestamp(sv.created_at / 1000)
-            FROM bronze.stg_vj_site_visits sv
-            -- latest sync per site visit
-            INNER JOIN (
-                SELECT "siteVisitId", MAX(_sync_id) AS max_sync
-                FROM bronze.stg_vj_site_visits
-                GROUP BY "siteVisitId"
-            ) svd ON sv."siteVisitId" = svd."siteVisitId"
-                 AND sv._sync_id = svd.max_sync
-            -- customer via entity_map
-            LEFT JOIN silver.entity_map em
-                ON em.vjsales_lead_id = sv."leadId"
-            LEFT JOIN gold.dim_customers dc
-                ON dc.unified_customer_id = em.unified_customer_id
-            -- project via stg_vj_projects buId
-            LEFT JOIN bronze.stg_vj_projects vp
-                ON vp."projectId" = sv."projectId"
-            LEFT JOIN gold.dim_projects dp
-                ON dp.bu_id = vp."buId"
-            WHERE sv.created_at IS NOT NULL
-            ON CONFLICT DO NOTHING
-        """)
-        result = conn.execute(query)
-        return result.rowcount
+                -- latest status per lead
+                LEFT JOIN LATERAL (
+                    SELECT ls2.status, ls2.category, ls2.response
+                    FROM bronze.stg_vj_lead_status ls2
+                    WHERE ls2."leadId" = l."leadId"
+                    ORDER BY ls2._sync_id DESC
+                    LIMIT 1
+                ) ls ON TRUE
 
-    def _insert_allotment_events(self, conn) -> int:
-        """Insert booking/allotment events from stg_vj_allotment_payment."""
-        query = text("""
-            INSERT INTO gold.fact_lead_pipeline (
-                vjsales_lead_id, vjsales_allotment_id,
-                customer_key, project_key, unit_key,
-                event_date_key, pipeline_stage, allotment_status,
-                booking_amount, event_timestamp
-            )
-            SELECT
-                ap."leadId",
-                ap."allotmentPaymentId",
-                dc.customer_key,
-                dp.project_key,
-                du.unit_key,
-                TO_CHAR(to_timestamp(ap.created_at / 1000), 'YYYYMMDD')::INT,
-                'booking',
-                ap.status,
-                ap."paidAmount",
-                to_timestamp(ap.created_at / 1000)
-            FROM bronze.stg_vj_allotment_payment ap
-            -- latest sync per allotment
-            INNER JOIN (
-                SELECT "allotmentPaymentId", MAX(_sync_id) AS max_sync
-                FROM bronze.stg_vj_allotment_payment
-                GROUP BY "allotmentPaymentId"
-            ) apd ON ap."allotmentPaymentId" = apd."allotmentPaymentId"
-                 AND ap._sync_id = apd.max_sync
-            -- customer via entity_map
-            LEFT JOIN silver.entity_map em
-                ON em.vjsales_lead_id = ap."leadId"
-            LEFT JOIN gold.dim_customers dc
-                ON dc.unified_customer_id = em.unified_customer_id
-            -- unit via inventory → farvision unit id
-            LEFT JOIN bronze.stg_vj_inventory inv
-                ON inv."unitId" = ap."unitId"
-            LEFT JOIN gold.dim_units du
-                ON du.farvision_unit_id = inv."farvisionUnitId"
-            -- project via stg_vj_projects buId (through inventory)
-            LEFT JOIN bronze.stg_vj_projects vp
-                ON vp."projectId" = inv."projectId"
-            LEFT JOIN gold.dim_projects dp
-                ON dp.bu_id = vp."buId"
-            WHERE ap.created_at IS NOT NULL
-            ON CONFLICT DO NOTHING
-        """)
-        result = conn.execute(query)
-        return result.rowcount
+                -- buyer: personId → dim_buyer.buyer_id
+                LEFT JOIN silver.dim_buyer db
+                    ON db.buyer_id = l."personId"
+
+                -- project: lead → latest site visit → stg_vj_projects.buId → dim_project.bu_id
+                LEFT JOIN LATERAL (
+                    SELECT sv2."projectId"
+                    FROM bronze.stg_vj_site_visits sv2
+                    WHERE sv2."leadId" = l."leadId"
+                    ORDER BY sv2._sync_id DESC
+                    LIMIT 1
+                ) lsv ON TRUE
+                LEFT JOIN bronze.stg_vj_projects vp
+                    ON vp."projectId" = lsv."projectId"
+                LEFT JOIN silver.dim_project dp
+                    ON dp.bu_id = CAST(vp."buId" AS VARCHAR)
+
+                -- channel partner: cpId → dim_channel_partner.cp_id
+                LEFT JOIN silver.dim_channel_partner dcp
+                    ON dcp.cp_id = l."cpId"
+
+                -- channel partner FOS: fosId → dim_channel_partner_fos.fos_id
+                LEFT JOIN silver.dim_channel_partner_fos dfos
+                    ON dfos.fos_id = l."fosId"
+
+                -- project head employee
+                LEFT JOIN silver.dim_employee ph
+                    ON ph.employee_id = l."projectHeadId"
+
+                -- sales manager employee
+                LEFT JOIN silver.dim_employee sm
+                    ON sm.employee_id = l."salesManagerId"
+
+                -- claimed by employee
+                LEFT JOIN silver.dim_employee cb
+                    ON cb.employee_id = l."claimedBy"
+
+                -- referred by employee
+                LEFT JOIN silver.dim_employee ref_emp
+                    ON ref_emp.employee_id = l."referredByEmployeeId"
+
+                -- external referrer
+                LEFT JOIN silver.dim_external_referrer dxr
+                    ON dxr.external_referrer_skey IS NOT NULL
+                   AND dxr.referrer_name = l."externalReferrerName"
+
+                -- referred by buyer
+                LEFT JOIN silver.dim_buyer ref_buyer
+                    ON ref_buyer.buyer_id = l."referredByBuyerId"
+
+                -- LOV: lead status
+                LEFT JOIN silver.dim_lov lov_status
+                    ON lov_status.lov_type = 'LEAD_STATUS'
+                   AND LOWER(lov_status.lov_value) = LOWER(ls.status)
+
+                -- LOV: lead type
+                LEFT JOIN silver.dim_lov lov_type
+                    ON lov_type.lov_type = 'LEAD_TYPE'
+                   AND LOWER(lov_type.lov_value) = LOWER(l."leadType")
+
+                -- LOV: lead sub type
+                LEFT JOIN silver.dim_lov lov_sub_type
+                    ON lov_sub_type.lov_type = 'LEAD_SUB_TYPE'
+                   AND LOWER(lov_sub_type.lov_value) = LOWER(l."leadSubType")
+
+                -- LOV: lead category
+                LEFT JOIN silver.dim_lov lov_category
+                    ON lov_category.lov_type = 'LEAD_CATEGORY'
+                   AND LOWER(lov_category.lov_value) = LOWER(ls.category)
+
+                -- LOV: lead response
+                LEFT JOIN silver.dim_lov lov_response
+                    ON lov_response.lov_type = 'LEAD_RESPONSE'
+                   AND LOWER(lov_response.lov_value) = LOWER(ls.response)
+
+                -- LOV: verification status
+                LEFT JOIN silver.dim_lov lov_verif
+                    ON lov_verif.lov_type = 'VERIFICATION_STATUS'
+                   AND LOWER(lov_verif.lov_value) = LOWER(l."verificationStatus")
+
+                -- LOV: referrer type
+                LEFT JOIN silver.dim_lov lov_ref_type
+                    ON lov_ref_type.lov_type = 'REFERRER_TYPE'
+                   AND LOWER(lov_ref_type.lov_value) = LOWER(l."referrerType")
+
+                WHERE l.created_at IS NOT NULL
+
+                ON CONFLICT (lead_id) DO UPDATE SET
+                    buyer_skey                   = EXCLUDED.buyer_skey,
+                    project_skey                 = EXCLUDED.project_skey,
+                    channel_partner_skey         = EXCLUDED.channel_partner_skey,
+                    channel_partner_fos_skey     = EXCLUDED.channel_partner_fos_skey,
+                    lead_dt_skey                 = EXCLUDED.lead_dt_skey,
+                    project_head_employee_skey   = EXCLUDED.project_head_employee_skey,
+                    sales_manager_employee_skey  = EXCLUDED.sales_manager_employee_skey,
+                    claimed_by_employee_skey     = EXCLUDED.claimed_by_employee_skey,
+                    referred_by_employee_skey    = EXCLUDED.referred_by_employee_skey,
+                    external_referrer_skey       = EXCLUDED.external_referrer_skey,
+                    referred_by_buyer_skey       = EXCLUDED.referred_by_buyer_skey,
+                    lead_status_lov_skey         = EXCLUDED.lead_status_lov_skey,
+                    lead_type_lov_skey           = EXCLUDED.lead_type_lov_skey,
+                    lead_sub_type_lov_skey       = EXCLUDED.lead_sub_type_lov_skey,
+                    lead_category_lov_skey       = EXCLUDED.lead_category_lov_skey,
+                    lead_response_lov_skey       = EXCLUDED.lead_response_lov_skey,
+                    verification_status_lov_skey = EXCLUDED.verification_status_lov_skey,
+                    referrer_type_lov_skey       = EXCLUDED.referrer_type_lov_skey,
+                    lead_display_id              = EXCLUDED.lead_display_id,
+                    display_dt                   = EXCLUDED.display_dt,
+                    src_updated_ts               = EXCLUDED.src_updated_ts,
+                    dw_update_ts                 = CURRENT_TIMESTAMP
+            """)
+            result = conn.execute(query)
+            logger.info("fact_lead: upserted %d rows", result.rowcount)
 
     # ==================================================================
-    # 2. fact_bookings  (Farvision DimBookingMaster)
+    # 2. fact_site_visit  (Silver — VJ Sales site visits)
+    # ==================================================================
+    def build_fact_site_visit(self):
+        """
+        Build silver.fact_site_visit from bronze.stg_vj_site_visits.
+
+        Dimension lookups (all against Silver dimensions):
+          - fact_lead_skey:        sv.leadId → fact_lead.lead_id
+          - project_skey:          stg_vj_projects.buId → dim_project.bu_id
+          - employee_skey:         sv.userId → dim_employee.employee_id
+          - channel_partner_skey:  sv.cpId → dim_channel_partner.cp_id
+          - site_visit_dt_skey:    epoch ms → YYYYMMDD string → dim_calendar.calendar_skey
+
+        Timestamps are epoch MILLISECONDS → to_timestamp(x/1000).
+        Upserts on site_visit_id.
+        """
+        with self.engine.begin() as conn:
+            query = text("""
+                INSERT INTO silver.fact_site_visit (
+                    fact_site_visit_skey,
+                    site_visit_id,
+                    fact_lead_skey,
+                    project_skey,
+                    employee_skey,
+                    channel_partner_skey,
+                    channel_partner_fos_skey,
+                    site_visit_dt_skey,
+                    site_visit_ts,
+                    photo_url,
+                    remarks,
+                    mode,
+                    src_created_dt,
+                    src_created_ts,
+                    src_updated_ts,
+                    dw_load_ts,
+                    dw_created_by
+                )
+                SELECT
+                    gen_random_uuid(),
+                    sv."siteVisitId",
+                    fl.fact_lead_skey,
+                    dp.project_skey,
+                    de.employee_skey,
+                    dcp.channel_partner_skey,
+                    dfos.channel_partner_fos_skey,
+                    TO_CHAR(to_timestamp(sv.created_at / 1000), 'YYYYMMDD'),
+                    to_timestamp(sv.created_at / 1000),
+                    sv."photoUrl",
+                    sv.remarks,
+                    sv.mode,
+                    (to_timestamp(sv.created_at / 1000))::DATE,
+                    to_timestamp(sv.created_at / 1000),
+                    to_timestamp(sv.updated_at / 1000),
+                    CURRENT_TIMESTAMP,
+                    'etl_pipeline'
+                FROM bronze.stg_vj_site_visits sv
+                -- latest sync per site visit
+                INNER JOIN (
+                    SELECT "siteVisitId", MAX(_sync_id) AS max_sync
+                    FROM bronze.stg_vj_site_visits
+                    GROUP BY "siteVisitId"
+                ) svd ON sv."siteVisitId" = svd."siteVisitId"
+                     AND sv._sync_id = svd.max_sync
+
+                -- lead FK: leadId → silver.fact_lead.lead_id
+                LEFT JOIN silver.fact_lead fl
+                    ON fl.lead_id = sv."leadId"
+
+                -- project: stg_vj_projects.buId → dim_project.bu_id
+                LEFT JOIN bronze.stg_vj_projects vp
+                    ON vp."projectId" = sv."projectId"
+                LEFT JOIN silver.dim_project dp
+                    ON dp.bu_id = CAST(vp."buId" AS VARCHAR)
+
+                -- employee: userId → dim_employee.employee_id
+                LEFT JOIN silver.dim_employee de
+                    ON de.employee_id = sv."userId"
+
+                -- channel partner: cpId → dim_channel_partner.cp_id
+                LEFT JOIN silver.dim_channel_partner dcp
+                    ON dcp.cp_id = sv."cpId"
+
+                -- channel partner FOS: fosId → dim_channel_partner_fos.fos_id
+                LEFT JOIN silver.dim_channel_partner_fos dfos
+                    ON dfos.fos_id = sv."fosId"
+
+                WHERE sv.created_at IS NOT NULL
+
+                ON CONFLICT (site_visit_id) DO UPDATE SET
+                    fact_lead_skey           = EXCLUDED.fact_lead_skey,
+                    project_skey             = EXCLUDED.project_skey,
+                    employee_skey            = EXCLUDED.employee_skey,
+                    channel_partner_skey     = EXCLUDED.channel_partner_skey,
+                    channel_partner_fos_skey = EXCLUDED.channel_partner_fos_skey,
+                    site_visit_dt_skey       = EXCLUDED.site_visit_dt_skey,
+                    site_visit_ts            = EXCLUDED.site_visit_ts,
+                    photo_url                = EXCLUDED.photo_url,
+                    remarks                  = EXCLUDED.remarks,
+                    mode                     = EXCLUDED.mode,
+                    src_updated_ts           = EXCLUDED.src_updated_ts,
+                    dw_update_ts             = CURRENT_TIMESTAMP
+            """)
+            result = conn.execute(query)
+            logger.info("fact_site_visit: upserted %d rows", result.rowcount)
+
+    # ==================================================================
+    # 3. fact_bookings  (Gold — Farvision DimBookingMaster)
     # ==================================================================
     def build_fact_bookings(self):
         """
@@ -337,7 +496,7 @@ class FactTransformer:
             logger.info("fact_bookings: upserted %d rows", result.rowcount)
 
     # ==================================================================
-    # 3. fact_receipts  (Farvision DimReceipt)
+    # 4. fact_receipts  (Gold — Farvision DimReceipt)
     # ==================================================================
     def build_fact_receipts(self):
         """
@@ -395,7 +554,7 @@ class FactTransformer:
             logger.info("fact_receipts: upserted %d rows", result.rowcount)
 
     # ==================================================================
-    # 4. fact_invoices  (Farvision DimInvoice)
+    # 5. fact_invoices  (Gold — Farvision DimInvoice)
     # ==================================================================
     def build_fact_invoices(self):
         """
@@ -448,7 +607,7 @@ class FactTransformer:
             logger.info("fact_invoices: upserted %d rows", result.rowcount)
 
     # ==================================================================
-    # 5. snapshot_outstanding  (Farvision FactDueDatewiseOutstanding)
+    # 6. snapshot_outstanding  (Gold — Farvision FactDueDatewiseOutstanding)
     # ==================================================================
     def build_snapshot_outstanding(self):
         """
@@ -510,7 +669,7 @@ class FactTransformer:
             logger.info("snapshot_outstanding: loaded %d rows", result.rowcount)
 
     # ==================================================================
-    # 6. snapshot_inventory  (VJ Sales Inventory)
+    # 7. snapshot_inventory  (Gold — VJ Sales Inventory)
     # ==================================================================
     def build_snapshot_inventory(self):
         """
@@ -566,7 +725,7 @@ class FactTransformer:
             logger.info("snapshot_inventory: loaded %d rows", result.rowcount)
 
     # ==================================================================
-    # 7. snapshot_referrals  (VJOP leads + lead_allotments + points)
+    # 8. snapshot_referrals  (Gold — VJOP leads + lead_allotments + points)
     # ==================================================================
     def build_snapshot_referrals(self):
         """
