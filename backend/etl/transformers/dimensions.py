@@ -1,57 +1,58 @@
 """
-Dimension Transformers — Build gold.dim_* tables from bronze + silver data.
+Dimension Transformers — Build silver.dim_* tables from bronze staging data.
 
 Sources:
-  - bronze.stg_fv_*            (Farvision ERP staging tables)
   - bronze.stg_vj_*            (VJ Sales App staging tables)
+  - bronze.stg_vj_cp           (Channel Partners)
+  - bronze.stg_vj_fos          (Field Officers)
   - silver.project_crosswalk   (unified project mapping)
-  - silver.entity_map          (cross-system identity resolution)
 """
 
 import logging
 from datetime import date, timedelta
+from calendar import monthrange
 
 from sqlalchemy import create_engine, text
 from sqlalchemy.engine import Engine
 
 logger = logging.getLogger(__name__)
 
+# Indian fiscal year starts in April
+FISCAL_YEAR_START_MONTH = 4
+
 
 class DimensionTransformer:
-    """Builds and updates gold-layer dimension tables."""
+    """Builds and updates silver-layer dimension tables."""
 
     def __init__(self, warehouse_connection_string: str):
         self.engine: Engine = create_engine(warehouse_connection_string)
 
     def transform_all(self):
         """Run all dimension transformations in dependency order."""
-        self.build_dim_date()
-        self.build_dim_projects()
-        self.build_dim_typologies()
-        self.build_dim_units()
-        self.build_dim_customers()
-        self.build_dim_sales_persons()
-        self.build_dim_lead_sources()
+        self.build_dim_calendar()
+        self.build_dim_country()
+        self.build_dim_project()
+        self.build_dim_project_unit()
+        self.build_dim_employee()
+        self.build_dim_channel_partner()
+        self.build_dim_channel_partner_fos()
+        self.build_dim_buyer()
 
     # ------------------------------------------------------------------
-    # dim_date
+    # dim_calendar
     # ------------------------------------------------------------------
-    def build_dim_date(self, start_year: int = 2015, end_year: int = 2035):
+    def build_dim_calendar(self, start_year: int = 2015, end_year: int = 2035):
         """
-        Populate gold.dim_date with all dates in range.
-        Includes fiscal year logic (April-March for Indian FY) and
-        fiscal_year_id mapping for known Farvision fiscal year IDs.
+        Populate silver.dim_calendar with all dates in range.
+        Includes fiscal year logic (April-March for Indian FY).
+        calendar_skey uses YYYYMMDD string format.
         """
-        # Known Farvision FiscalYearId mappings
-        FISCAL_YEAR_ID_MAP = {
-            2026: 56,   # FY2025-26
-            2025: 52,   # FY2024-25
-        }
-
         with self.engine.begin() as conn:
-            count = conn.execute(text("SELECT COUNT(*) FROM gold.dim_date")).scalar()
+            count = conn.execute(
+                text("SELECT COUNT(*) FROM silver.dim_calendar")
+            ).scalar()
             if count > 0:
-                logger.info("dim_date already populated (%d rows), skipping", count)
+                logger.info("dim_calendar already populated (%d rows), skipping", count)
                 return
 
             current = date(start_year, 1, 1)
@@ -59,351 +60,520 @@ class DimensionTransformer:
             rows = []
 
             while current <= end:
-                # Fiscal year: April-March (FY2026 = Apr 2025 - Mar 2026)
-                if current.month >= 4:
+                # --- Fiscal year: April-March (FY2026 = Apr 2025 - Mar 2026) ---
+                if current.month >= FISCAL_YEAR_START_MONTH:
                     fiscal_year = current.year + 1
-                    fiscal_q_month = current.month - 3  # Apr=1, Jul=4, Oct=7
+                    fiscal_month = current.month - 3   # Apr=1 .. Dec=9
                 else:
                     fiscal_year = current.year
-                    fiscal_q_month = current.month + 9  # Jan=10, Feb=11, Mar=12
+                    fiscal_month = current.month + 9   # Jan=10, Feb=11, Mar=12
 
-                fiscal_quarter = f"Q{(fiscal_q_month - 1) // 3 + 1}"
-                calendar_quarter = f"Q{(current.month - 1) // 3 + 1}"
-                fiscal_year_id = FISCAL_YEAR_ID_MAP.get(fiscal_year)
+                fiscal_quarter = (fiscal_month - 1) // 3 + 1
+                fiscal_day = (
+                    current
+                    - date(fiscal_year - 1, FISCAL_YEAR_START_MONTH, 1)
+                ).days + 1
+
+                # ISO week info
+                iso_year, iso_week, iso_weekday = current.isocalendar()
+                fiscal_week = (fiscal_day - 1) // 7 + 1
+
+                # Calendar quarter
+                quarter_num = (current.month - 1) // 3 + 1
+
+                # Week of month (1-based, week starts Monday)
+                first_of_month = current.replace(day=1)
+                week_of_month = (current.day + first_of_month.weekday()) // 7 + 1
+
+                # Week start/end (Monday-Sunday)
+                week_start = current - timedelta(days=current.weekday())
+                week_end = week_start + timedelta(days=6)
+
+                # Month start/end
+                month_start = first_of_month
+                month_end = current.replace(
+                    day=monthrange(current.year, current.month)[1]
+                )
+
+                # Quarter start/end
+                q_start_month = (quarter_num - 1) * 3 + 1
+                q_end_month = q_start_month + 2
+                quarter_start = date(current.year, q_start_month, 1)
+                quarter_end = date(
+                    current.year, q_end_month,
+                    monthrange(current.year, q_end_month)[1],
+                )
+
+                # Year start/end
+                year_start = date(current.year, 1, 1)
+                year_end = date(current.year, 12, 31)
+
+                # Fiscal year start/end
+                fiscal_year_start = date(fiscal_year - 1, FISCAL_YEAR_START_MONTH, 1)
+                fiscal_year_end = date(fiscal_year, 3, 31)
 
                 rows.append({
-                    "date_key": int(current.strftime("%Y%m%d")),
-                    "full_date": current,
-                    "day_of_week": current.strftime("%A"),
-                    "day_of_month": current.day,
-                    "week_of_year": current.isocalendar()[1],
-                    "month_number": current.month,
-                    "month_name": current.strftime("%B"),
-                    "quarter": calendar_quarter,
-                    "fiscal_quarter": fiscal_quarter,
-                    "calendar_year": current.year,
-                    "fiscal_year": fiscal_year,
-                    "fiscal_year_label": f"FY{fiscal_year}",
-                    "fiscal_year_id": fiscal_year_id,
+                    "calendar_skey": current.strftime("%Y%m%d"),
+                    "calendar_dt": current,
+                    "day_of_month_num": current.day,
+                    "day_of_week_num": iso_weekday,          # 1=Mon .. 7=Sun
+                    "day_name": current.strftime("%A"),
                     "is_weekend": current.weekday() >= 5,
-                    "is_month_end": (current + timedelta(days=1)).month != current.month,
+                    "week_of_year_num": iso_week,
+                    "week_of_month_num": week_of_month,
+                    "week_start_dt": week_start,
+                    "week_end_dt": week_end,
+                    "month_num": current.month,
+                    "month_name": current.strftime("%B"),
+                    "month_short_name": current.strftime("%b"),
+                    "month_start_dt": month_start,
+                    "month_end_dt": month_end,
+                    "quarter_num": quarter_num,
+                    "quarter_start_dt": quarter_start,
+                    "quarter_end_dt": quarter_end,
+                    "year_num": current.year,
+                    "year_start_dt": year_start,
+                    "year_end_dt": year_end,
+                    "month_year": current.strftime("%B %Y"),
+                    "week_year": f"W{iso_week:02d} {iso_year}",
+                    "fiscal_day": fiscal_day,
+                    "fiscal_week": fiscal_week,
+                    "fiscal_month": fiscal_month,
+                    "fiscal_quarter": fiscal_quarter,
+                    "fiscal_year": fiscal_year,
+                    "fiscal_month_year": f"FM{fiscal_month:02d} FY{fiscal_year}",
+                    "fiscal_week_year": f"FW{fiscal_week:02d} FY{fiscal_year}",
+                    "fiscal_year_start_dt": fiscal_year_start,
+                    "fiscal_year_end_dt": fiscal_year_end,
+                    "dw_created_by": "etl_pipeline",
                 })
 
                 current += timedelta(days=1)
 
             insert = text("""
-                INSERT INTO gold.dim_date (
-                    date_key, full_date, day_of_week, day_of_month, week_of_year,
-                    month_number, month_name, quarter, fiscal_quarter,
-                    calendar_year, fiscal_year, fiscal_year_label, fiscal_year_id,
-                    is_weekend, is_month_end
+                INSERT INTO silver.dim_calendar (
+                    calendar_skey, calendar_dt,
+                    day_of_month_num, day_of_week_num, day_name, is_weekend,
+                    week_of_year_num, week_of_month_num, week_start_dt, week_end_dt,
+                    month_num, month_name, month_short_name, month_start_dt, month_end_dt,
+                    quarter_num, quarter_start_dt, quarter_end_dt,
+                    year_num, year_start_dt, year_end_dt,
+                    month_year, week_year,
+                    fiscal_day, fiscal_week, fiscal_month, fiscal_quarter, fiscal_year,
+                    fiscal_month_year, fiscal_week_year,
+                    fiscal_year_start_dt, fiscal_year_end_dt,
+                    dw_created_by
                 ) VALUES (
-                    :date_key, :full_date, :day_of_week, :day_of_month, :week_of_year,
-                    :month_number, :month_name, :quarter, :fiscal_quarter,
-                    :calendar_year, :fiscal_year, :fiscal_year_label, :fiscal_year_id,
-                    :is_weekend, :is_month_end
+                    :calendar_skey, :calendar_dt,
+                    :day_of_month_num, :day_of_week_num, :day_name, :is_weekend,
+                    :week_of_year_num, :week_of_month_num, :week_start_dt, :week_end_dt,
+                    :month_num, :month_name, :month_short_name, :month_start_dt, :month_end_dt,
+                    :quarter_num, :quarter_start_dt, :quarter_end_dt,
+                    :year_num, :year_start_dt, :year_end_dt,
+                    :month_year, :week_year,
+                    :fiscal_day, :fiscal_week, :fiscal_month, :fiscal_quarter, :fiscal_year,
+                    :fiscal_month_year, :fiscal_week_year,
+                    :fiscal_year_start_dt, :fiscal_year_end_dt,
+                    :dw_created_by
                 )
-                ON CONFLICT (date_key) DO NOTHING
+                ON CONFLICT (calendar_skey) DO NOTHING
             """)
             conn.execute(insert, rows)
-            logger.info("Populated dim_date with %d rows", len(rows))
+            logger.info("Populated dim_calendar with %d rows", len(rows))
 
     # ------------------------------------------------------------------
-    # dim_projects
+    # dim_country  (seed-only — data lives in silver_schema.sql seed)
     # ------------------------------------------------------------------
-    def build_dim_projects(self):
+    def build_dim_country(self):
         """
-        Upsert gold.dim_projects from silver.project_crosswalk.
-        Uses farvision_bu_id as the join key.
+        Seed silver.dim_country if empty.
+        Primary seed data is inserted by silver_schema.sql; this is a
+        safety net to ensure the table is never empty at transform time.
         """
-        query = text("""
-            INSERT INTO gold.dim_projects (bu_id, project_name, phase_name, status)
-            SELECT
-                pc.farvision_bu_id,
-                pc.canonical_name,
-                pc.phase_name,
-                'active'
-            FROM silver.project_crosswalk pc
-            ON CONFLICT (bu_id) DO UPDATE SET
-                project_name = EXCLUDED.project_name,
-                phase_name   = EXCLUDED.phase_name,
-                updated_at   = NOW()
-        """)
         with self.engine.begin() as conn:
-            result = conn.execute(query)
-            logger.info("Upserted %d rows into dim_projects", result.rowcount)
+            count = conn.execute(
+                text("SELECT COUNT(*) FROM silver.dim_country")
+            ).scalar()
+            if count > 0:
+                logger.info("dim_country already seeded (%d rows), skipping", count)
+                return
+
+            conn.execute(text("""
+                INSERT INTO silver.dim_country
+                    (country_iso_2, country_iso_3, country_full_name, currency, dw_created_by)
+                VALUES
+                    ('IN', 'IND', 'India', 'INR', 'etl_pipeline')
+                ON CONFLICT DO NOTHING
+            """))
+            logger.info("Seeded dim_country with India fallback row")
 
     # ------------------------------------------------------------------
-    # dim_typologies
+    # dim_project
     # ------------------------------------------------------------------
-    def build_dim_typologies(self):
+    def build_dim_project(self):
         """
-        Upsert gold.dim_typologies from bronze.stg_fv_dim_typology_master.
-        Generates a human-friendly display_name (e.g. "3.00BHK" -> "3 BHK")
-        and flags XL/XR variants.
+        Upsert silver.dim_project from bronze.stg_vj_projects joined
+        with silver.project_crosswalk for bu_id resolution.
+
+        Source: bronze.stg_vj_projects + silver.project_crosswalk
         """
         query = text("""
-            INSERT INTO gold.dim_typologies (
-                typology_id, typology_code, typology, display_name, is_base_variant
-            )
-            SELECT
-                t."TypologyId",
-                t."TypologyCode",
-                t."Typology",
-                -- Generate display_name: strip trailing zeros from numeric prefix,
-                -- add space before BHK, keep variant suffix
-                REGEXP_REPLACE(
-                    REGEXP_REPLACE(
-                        t."Typology",
-                        '^([0-9]+)\\.?0*BHK',
-                        '\\1 BHK'
-                    ),
-                    '\\s+', ' ', 'g'
-                ),
-                -- Base variant if no XL/XR/etc. suffix
-                CASE
-                    WHEN t."Typology" ~* '(XL|XR|JODI|DUPLEX|PENTHOUSE)'
-                    THEN FALSE
-                    ELSE TRUE
-                END
-            FROM bronze.stg_fv_dim_typology_master t
-            WHERE t._sync_id = (
-                SELECT MAX(t2._sync_id)
-                FROM bronze.stg_fv_dim_typology_master t2
-                WHERE t2."TypologyId" = t."TypologyId"
-            )
-            ON CONFLICT (typology_id) DO UPDATE SET
-                typology_code  = EXCLUDED.typology_code,
-                typology       = EXCLUDED.typology,
-                display_name   = EXCLUDED.display_name,
-                is_base_variant = EXCLUDED.is_base_variant
-        """)
-        with self.engine.begin() as conn:
-            result = conn.execute(query)
-            logger.info("Upserted %d rows into dim_typologies", result.rowcount)
-
-    # ------------------------------------------------------------------
-    # dim_units
-    # ------------------------------------------------------------------
-    def build_dim_units(self):
-        """
-        Upsert gold.dim_units from Farvision unit master + unit movement,
-        with optional VJ Sales inventory data merged in.
-
-        Sources:
-          - bronze.stg_fv_dim_unit_master   (UnitId, UnitCode, BUId, TypologyId)
-          - bronze.stg_fv_fact_unit_movement (UnitStatus, Area, CarpetArea)
-          - bronze.stg_vj_inventory         (saleable_area overlay via farvisionUnitId)
-          - gold.dim_projects               (project_key via bu_id)
-          - gold.dim_typologies             (typology_key via typology_id)
-        """
-        query = text("""
-            INSERT INTO gold.dim_units (
-                farvision_unit_id, project_key, typology_key,
-                unit_no, wing, floor, unit_status, farvision_status,
-                saleable_area, carpet_area
+            INSERT INTO silver.dim_project (
+                project_skey, project_id, bu_id, project_name,
+                rera_number, is_completed,
+                dw_load_ts, dw_created_by
             )
             SELECT
-                um."UnitId",
-                dp.project_key,
-                dt.typology_key,
-                um."UnitCode",
-                ph."Level3",         -- wing from project hierarchy
-                um."FloorId",
-                mv."UnitStatus",
-                CASE mv."UnitStatus"
-                    WHEN 1 THEN 'Sold'
-                    WHEN 2 THEN 'Available'
-                    WHEN 3 THEN 'Blocked'
-                    ELSE 'Unknown'
-                END,
-                COALESCE(vi."saleableArea", mv."Area"),
-                mv."CarpetArea"
-            FROM bronze.stg_fv_dim_unit_master um
-            -- Deduplicate: latest sync per UnitId
-            INNER JOIN (
-                SELECT "UnitId", MAX(_sync_id) AS max_sync_id
-                FROM bronze.stg_fv_dim_unit_master
-                GROUP BY "UnitId"
-            ) um_latest ON um."UnitId" = um_latest."UnitId"
-                       AND um._sync_id = um_latest.max_sync_id
-            -- Join to dim_projects via BUId
-            INNER JOIN gold.dim_projects dp ON dp.bu_id = um."BUId"
-            -- Optional: typology
-            LEFT JOIN gold.dim_typologies dt ON dt.typology_id = um."TypologyId"
-            -- Latest unit movement for status and area
-            LEFT JOIN LATERAL (
-                SELECT mv2."UnitStatus", mv2."Area", mv2."CarpetArea"
-                FROM bronze.stg_fv_fact_unit_movement mv2
-                WHERE mv2."UnitId" = um."UnitId"
-                ORDER BY mv2._sync_id DESC
-                LIMIT 1
-            ) mv ON TRUE
-            -- Optional: project hierarchy for wing name
-            LEFT JOIN LATERAL (
-                SELECT ph2."Level3"
-                FROM bronze.stg_fv_dim_project_hierarchy ph2
-                WHERE ph2."BUId" = um."BUId"
-                ORDER BY ph2._sync_id DESC
-                LIMIT 1
-            ) ph ON TRUE
-            -- Optional: VJ Sales inventory overlay (matched via farvisionUnitId)
-            LEFT JOIN LATERAL (
-                SELECT vi2."saleableArea"
-                FROM bronze.stg_vj_inventory vi2
-                WHERE vi2."farvisionUnitId" = um."UnitId"
-                ORDER BY vi2._sync_id DESC
-                LIMIT 1
-            ) vi ON TRUE
-            ON CONFLICT (farvision_unit_id) DO UPDATE SET
-                project_key     = EXCLUDED.project_key,
-                typology_key    = EXCLUDED.typology_key,
-                unit_no         = EXCLUDED.unit_no,
-                wing            = EXCLUDED.wing,
-                floor           = EXCLUDED.floor,
-                unit_status     = EXCLUDED.unit_status,
-                farvision_status = EXCLUDED.farvision_status,
-                saleable_area   = EXCLUDED.saleable_area,
-                carpet_area     = EXCLUDED.carpet_area,
-                updated_at      = NOW()
-        """)
-        with self.engine.begin() as conn:
-            result = conn.execute(query)
-            logger.info("Upserted %d rows into dim_units", result.rowcount)
-
-    # ------------------------------------------------------------------
-    # dim_customers
-    # ------------------------------------------------------------------
-    def build_dim_customers(self):
-        """
-        Upsert gold.dim_customers from Farvision customer detail.
-
-        Two-path approach:
-        1. Direct from Farvision DimCustomerDetail (always works)
-        2. Enhanced via entity_map when VJ Sales data is available
-
-        Source: bronze.stg_fv_dim_customer_detail
-        """
-        query = text("""
-            INSERT INTO gold.dim_customers (
-                unified_customer_id, farvision_ledger_id,
-                full_name, customer_name, mobile, email, pan_number,
-                source_system_origin
-            )
-            SELECT DISTINCT ON (c."LedgerCustId")
                 gen_random_uuid(),
-                c."LedgerCustId",
-                c."FullName",
-                c."Customer",
-                c."MobileNo",
-                c."EmailId",
-                c."PanNo",
-                'farvision'
-            FROM bronze.stg_fv_dim_customer_detail c
-            WHERE c."LedgerCustId" IS NOT NULL
-              AND c._sync_id = (
-                  SELECT MAX(c2._sync_id)
-                  FROM bronze.stg_fv_dim_customer_detail c2
-                  WHERE c2."LedgerCustId" = c."LedgerCustId"
-              )
-              AND c."LedgerCustId" NOT IN (
-                  SELECT farvision_ledger_id FROM gold.dim_customers
-                  WHERE farvision_ledger_id IS NOT NULL
-              )
-            ORDER BY c."LedgerCustId", c._sync_id DESC
+                (p."projectId")::UUID,
+                pc.farvision_bu_id::VARCHAR(256),
+                COALESCE(pc.canonical_name, p."projectName"),
+                p."reraNumber",
+                COALESCE((p."isCompleted")::BOOLEAN, FALSE),
+                CURRENT_TIMESTAMP,
+                'etl_pipeline'
+            FROM bronze.stg_vj_projects p
+            -- Deduplicate: latest sync per projectId
+            INNER JOIN (
+                SELECT "projectId", MAX(_sync_id) AS max_sync_id
+                FROM bronze.stg_vj_projects
+                GROUP BY "projectId"
+            ) p_latest ON p."projectId" = p_latest."projectId"
+                      AND p._sync_id = p_latest.max_sync_id
+            -- Resolve bu_id via crosswalk
+            LEFT JOIN silver.project_crosswalk pc
+                ON pc.vjsales_project_name = p."projectName"
+            ON CONFLICT (project_id) DO UPDATE SET
+                bu_id        = EXCLUDED.bu_id,
+                project_name = EXCLUDED.project_name,
+                rera_number  = EXCLUDED.rera_number,
+                is_completed = EXCLUDED.is_completed,
+                dw_update_ts = CURRENT_TIMESTAMP
         """)
         with self.engine.begin() as conn:
             result = conn.execute(query)
-            logger.info("Upserted %d rows into dim_customers", result.rowcount)
+            logger.info("Upserted %d rows into dim_project", result.rowcount)
 
     # ------------------------------------------------------------------
-    # dim_sales_persons
+    # dim_project_unit
     # ------------------------------------------------------------------
-    def build_dim_sales_persons(self):
+    def build_dim_project_unit(self):
         """
-        Upsert gold.dim_sales_persons from Farvision booking master.
-        Deduplicated by SalesPersonId.
+        Upsert silver.dim_project_unit from bronze.stg_vj_inventory,
+        looking up project_skey via bu_id in silver.dim_project.
 
-        Source: bronze.stg_fv_dim_booking_master (SalesPersonId, SalesPersonName)
+        Source: bronze.stg_vj_inventory + bronze.stg_vj_projects
         """
         query = text("""
-            INSERT INTO gold.dim_sales_persons (farvision_sales_person_id, name, is_active)
-            SELECT DISTINCT ON (b."SalesPersonId")
-                b."SalesPersonId",
-                b."SalesPersonName",
-                TRUE
-            FROM bronze.stg_fv_dim_booking_master b
-            WHERE b."SalesPersonId" IS NOT NULL
-              AND b._sync_id = (
-                  SELECT MAX(b2._sync_id)
-                  FROM bronze.stg_fv_dim_booking_master b2
-                  WHERE b2."SalesPersonId" = b."SalesPersonId"
-              )
-            ORDER BY b."SalesPersonId", b._sync_id DESC
-            ON CONFLICT (farvision_sales_person_id) DO UPDATE SET
-                name = EXCLUDED.name
+            INSERT INTO silver.dim_project_unit (
+                project_unit_skey, project_skey, fv_unit_id,
+                wing_name, floor_no, unit_no,
+                saleable_area, chargeable_area, total_cost_amt, bsp_amt,
+                unit_status, unit_type, display_unit_type, fv_status,
+                sold_dt, paid_amt,
+                dw_load_ts, dw_created_by
+            )
+            SELECT
+                gen_random_uuid(),
+                dp.project_skey,
+                inv."farvisionUnitId"::VARCHAR(256),
+                inv."wing",
+                inv."floor"::VARCHAR(256),
+                inv."unitNo",
+                (inv."saleableArea")::NUMERIC(18,4),
+                (inv."chargeableArea")::NUMERIC(18,4),
+                (inv."totalCost")::NUMERIC(18,4),
+                (inv."BSP")::NUMERIC(18,4),
+                inv."inventoryStatus",
+                inv."type",
+                inv."displayUnitType",
+                inv."farvisionStatus",
+                (inv."soldDate")::DATE,
+                (inv."paidAmount")::NUMERIC(18,4),
+                CURRENT_TIMESTAMP,
+                'etl_pipeline'
+            FROM bronze.stg_vj_inventory inv
+            -- Deduplicate: latest sync per unitId
+            INNER JOIN (
+                SELECT "unitId", MAX(_sync_id) AS max_sync_id
+                FROM bronze.stg_vj_inventory
+                GROUP BY "unitId"
+            ) inv_latest ON inv."unitId" = inv_latest."unitId"
+                        AND inv._sync_id = inv_latest.max_sync_id
+            -- Resolve project_skey via bu_id
+            LEFT JOIN silver.dim_project dp
+                ON dp.bu_id = inv."buId"::VARCHAR(256)
+            ON CONFLICT (fv_unit_id) DO UPDATE SET
+                project_skey     = EXCLUDED.project_skey,
+                wing_name        = EXCLUDED.wing_name,
+                floor_no         = EXCLUDED.floor_no,
+                unit_no          = EXCLUDED.unit_no,
+                saleable_area    = EXCLUDED.saleable_area,
+                chargeable_area  = EXCLUDED.chargeable_area,
+                total_cost_amt   = EXCLUDED.total_cost_amt,
+                bsp_amt          = EXCLUDED.bsp_amt,
+                unit_status      = EXCLUDED.unit_status,
+                unit_type        = EXCLUDED.unit_type,
+                display_unit_type = EXCLUDED.display_unit_type,
+                fv_status        = EXCLUDED.fv_status,
+                sold_dt          = EXCLUDED.sold_dt,
+                paid_amt         = EXCLUDED.paid_amt,
+                dw_update_ts     = CURRENT_TIMESTAMP
         """)
         with self.engine.begin() as conn:
             result = conn.execute(query)
-            logger.info("Upserted %d rows into dim_sales_persons", result.rowcount)
+            logger.info("Upserted %d rows into dim_project_unit", result.rowcount)
 
     # ------------------------------------------------------------------
-    # dim_lead_sources
+    # dim_employee
     # ------------------------------------------------------------------
-    def build_dim_lead_sources(self):
+    def build_dim_employee(self):
         """
-        Upsert gold.dim_lead_sources from VJ Sales leads + channel partners.
+        Upsert silver.dim_employee from bronze.stg_vj_users.
 
-        Sources:
-          - bronze.stg_vj_leads  (leadType, leadCategory, cpId)
-          - bronze.stg_vj_cp     (cpId, name, companyName)
+        Source: bronze.stg_vj_users (VJ Sales App users)
         """
         query = text("""
-            WITH lead_sources AS (
-                SELECT DISTINCT
-                    COALESCE(l."leadType", 'Unknown') AS source_name,
-                    CASE
-                        WHEN l."leadType" ILIKE '%%walk%%' THEN 'organic'
-                        WHEN l."leadType" ILIKE '%%referral%%' THEN 'referral'
-                        WHEN l."leadType" ILIKE '%%digital%%'
-                             OR l."leadType" ILIKE '%%facebook%%'
-                             OR l."leadType" ILIKE '%%google%%' THEN 'paid'
-                        WHEN l."cpId" IS NOT NULL THEN 'channel_partner'
-                        WHEN l."leadType" ILIKE '%%channel%%'
-                             OR l."leadType" ILIKE '%%cp%%'
-                             OR l."leadType" ILIKE '%%broker%%' THEN 'channel_partner'
-                        ELSE 'other'
-                    END AS source_category,
-                    cp.name AS channel_partner_name,
-                    l."cpId" AS cp_id
-                FROM bronze.stg_vj_leads l
-                -- Deduplicate leads by latest sync per leadId
-                INNER JOIN (
-                    SELECT "leadId", MAX(_sync_id) AS max_sync_id
-                    FROM bronze.stg_vj_leads
-                    GROUP BY "leadId"
-                ) l_latest ON l."leadId" = l_latest."leadId"
-                          AND l._sync_id = l_latest.max_sync_id
-                -- Optional: channel partner details
-                LEFT JOIN LATERAL (
-                    SELECT cp2.name
-                    FROM bronze.stg_vj_cp cp2
-                    WHERE cp2."cpId" = l."cpId"
-                    ORDER BY cp2._sync_id DESC
-                    LIMIT 1
-                ) cp ON l."cpId" IS NOT NULL
-                WHERE l."leadType" IS NOT NULL
+            INSERT INTO silver.dim_employee (
+                employee_skey, employee_id, employee_name,
+                email, contact_number, role_name,
+                dw_load_ts, dw_created_by
             )
-            INSERT INTO gold.dim_lead_sources (
-                source_name, source_category, channel_partner_name, cp_id
-            )
-            SELECT source_name, source_category, channel_partner_name, cp_id
-            FROM lead_sources
-            ON CONFLICT (source_name) DO UPDATE SET
-                source_category      = EXCLUDED.source_category,
-                channel_partner_name = COALESCE(EXCLUDED.channel_partner_name, gold.dim_lead_sources.channel_partner_name),
-                cp_id                = COALESCE(EXCLUDED.cp_id, gold.dim_lead_sources.cp_id)
+            SELECT
+                gen_random_uuid(),
+                (u."userId")::UUID,
+                u."name",
+                u."email",
+                u."contactNumber",
+                r."roleName"
+            ,   CURRENT_TIMESTAMP,
+                'etl_pipeline'
+            FROM bronze.stg_vj_users u
+            -- Deduplicate: latest sync per userId
+            INNER JOIN (
+                SELECT "userId", MAX(_sync_id) AS max_sync_id
+                FROM bronze.stg_vj_users
+                GROUP BY "userId"
+            ) u_latest ON u."userId" = u_latest."userId"
+                      AND u._sync_id = u_latest.max_sync_id
+            -- Optional: role lookup
+            LEFT JOIN LATERAL (
+                SELECT r2."roleName"
+                FROM bronze.stg_vj_roles r2
+                WHERE r2."roleId" = u."roleId"
+                ORDER BY r2._sync_id DESC
+                LIMIT 1
+            ) r ON TRUE
+            ON CONFLICT (employee_id) DO UPDATE SET
+                employee_name  = EXCLUDED.employee_name,
+                email          = EXCLUDED.email,
+                contact_number = EXCLUDED.contact_number,
+                role_name      = EXCLUDED.role_name,
+                dw_update_ts   = CURRENT_TIMESTAMP
         """)
         with self.engine.begin() as conn:
             result = conn.execute(query)
-            logger.info("Upserted %d rows into dim_lead_sources", result.rowcount)
+            logger.info("Upserted %d rows into dim_employee", result.rowcount)
+
+    # ------------------------------------------------------------------
+    # dim_channel_partner
+    # ------------------------------------------------------------------
+    def build_dim_channel_partner(self):
+        """
+        Upsert silver.dim_channel_partner from bronze.stg_vj_cp.
+
+        Source: bronze.stg_vj_cp (VJ Sales channel partners)
+        """
+        query = text("""
+            INSERT INTO silver.dim_channel_partner (
+                channel_partner_skey, cp_id, cp_display_id,
+                cp_type, contact_number, email,
+                type_of_agent, billing_name,
+                gst_business_name, gst_legal_name, proprietorship_name,
+                is_gst_applicable, msme_type, msme_number,
+                approval_status, rejection_reason, is_disabled,
+                ledger_id,
+                bank_account_holder_name, bank_account_number,
+                bank_ifsc_code, bank_branch_name,
+                rera_start_dt, rera_end_dt,
+                src_created_ts, src_updated_ts,
+                dw_load_ts, dw_created_by
+            )
+            SELECT
+                gen_random_uuid(),
+                (cp."cpId")::UUID,
+                cp."cpDisplayId",
+                cp."cpType",
+                cp."contactNumber",
+                cp."email",
+                cp."typeOfAgent",
+                cp."billingName",
+                cp."gstBusinessName",
+                cp."gstLegalName",
+                cp."proprietorshipName",
+                COALESCE((cp."isGstApplicable")::BOOLEAN, FALSE),
+                cp."msmeType",
+                cp."msmeNumber",
+                cp."approvalStatus",
+                cp."rejectionReason",
+                COALESCE((cp."isDisabled")::BOOLEAN, FALSE),
+                cp."ledgerId",
+                cp."bankAccountHolderName",
+                cp."bankAccountNumber",
+                cp."bankIfscCode",
+                cp."bankBranchName",
+                (cp."reraStartDate")::DATE,
+                (cp."reraEndDate")::DATE,
+                (cp."createdAt")::TIMESTAMP,
+                (cp."updatedAt")::TIMESTAMP,
+                CURRENT_TIMESTAMP,
+                'etl_pipeline'
+            FROM bronze.stg_vj_cp cp
+            -- Deduplicate: latest sync per cpId
+            INNER JOIN (
+                SELECT "cpId", MAX(_sync_id) AS max_sync_id
+                FROM bronze.stg_vj_cp
+                GROUP BY "cpId"
+            ) cp_latest ON cp."cpId" = cp_latest."cpId"
+                       AND cp._sync_id = cp_latest.max_sync_id
+            ON CONFLICT (cp_id) DO UPDATE SET
+                cp_display_id            = EXCLUDED.cp_display_id,
+                cp_type                  = EXCLUDED.cp_type,
+                contact_number           = EXCLUDED.contact_number,
+                email                    = EXCLUDED.email,
+                type_of_agent            = EXCLUDED.type_of_agent,
+                billing_name             = EXCLUDED.billing_name,
+                gst_business_name        = EXCLUDED.gst_business_name,
+                gst_legal_name           = EXCLUDED.gst_legal_name,
+                proprietorship_name      = EXCLUDED.proprietorship_name,
+                is_gst_applicable        = EXCLUDED.is_gst_applicable,
+                approval_status          = EXCLUDED.approval_status,
+                rejection_reason         = EXCLUDED.rejection_reason,
+                is_disabled              = EXCLUDED.is_disabled,
+                src_updated_ts           = EXCLUDED.src_updated_ts,
+                dw_update_ts             = CURRENT_TIMESTAMP
+        """)
+        with self.engine.begin() as conn:
+            result = conn.execute(query)
+            logger.info("Upserted %d rows into dim_channel_partner", result.rowcount)
+
+    # ------------------------------------------------------------------
+    # dim_channel_partner_fos
+    # ------------------------------------------------------------------
+    def build_dim_channel_partner_fos(self):
+        """
+        Upsert silver.dim_channel_partner_fos from bronze.stg_vj_fos.
+        Links each FOS to its parent channel_partner_skey.
+
+        Source: bronze.stg_vj_fos (VJ Sales field officers)
+        """
+        query = text("""
+            INSERT INTO silver.dim_channel_partner_fos (
+                channel_partner_fos_skey, channel_partner_skey,
+                fos_id, name, contact_number, email,
+                approval_status, rejection_reason, fos_display_id,
+                bank_account_holder_name, bank_account_number,
+                bank_ifsc_code, bank_branch_name,
+                is_disabled,
+                src_created_ts, src_updated_ts,
+                dw_load_ts, dw_created_by
+            )
+            SELECT
+                gen_random_uuid(),
+                dcp.channel_partner_skey,
+                (fos."fosId")::UUID,
+                fos."name",
+                fos."contactNumber",
+                fos."email",
+                fos."approvalStatus",
+                fos."rejectionReason",
+                fos."fosDisplayId",
+                fos."bankAccountHolderName",
+                fos."bankAccountNumber",
+                fos."bankIfscCode",
+                fos."bankBranchName",
+                COALESCE((fos."isDisabled")::BOOLEAN, FALSE),
+                (fos."createdAt")::TIMESTAMP,
+                (fos."updatedAt")::TIMESTAMP,
+                CURRENT_TIMESTAMP,
+                'etl_pipeline'
+            FROM bronze.stg_vj_fos fos
+            -- Deduplicate: latest sync per fosId
+            INNER JOIN (
+                SELECT "fosId", MAX(_sync_id) AS max_sync_id
+                FROM bronze.stg_vj_fos
+                GROUP BY "fosId"
+            ) fos_latest ON fos."fosId" = fos_latest."fosId"
+                        AND fos._sync_id = fos_latest.max_sync_id
+            -- Resolve parent channel partner
+            LEFT JOIN silver.dim_channel_partner dcp
+                ON dcp.cp_id = (fos."cpId")::UUID
+            ON CONFLICT (fos_id) DO UPDATE SET
+                channel_partner_skey     = EXCLUDED.channel_partner_skey,
+                name                     = EXCLUDED.name,
+                contact_number           = EXCLUDED.contact_number,
+                email                    = EXCLUDED.email,
+                approval_status          = EXCLUDED.approval_status,
+                rejection_reason         = EXCLUDED.rejection_reason,
+                fos_display_id           = EXCLUDED.fos_display_id,
+                is_disabled              = EXCLUDED.is_disabled,
+                src_updated_ts           = EXCLUDED.src_updated_ts,
+                dw_update_ts             = CURRENT_TIMESTAMP
+        """)
+        with self.engine.begin() as conn:
+            result = conn.execute(query)
+            logger.info(
+                "Upserted %d rows into dim_channel_partner_fos", result.rowcount
+            )
+
+    # ------------------------------------------------------------------
+    # dim_buyer
+    # ------------------------------------------------------------------
+    def build_dim_buyer(self):
+        """
+        Upsert silver.dim_buyer from bronze.stg_vj_person.
+
+        Source: bronze.stg_vj_person (VJ Sales persons / buyers)
+        """
+        query = text("""
+            INSERT INTO silver.dim_buyer (
+                buyer_skey, buyer_id, name,
+                contact_number, email, pan,
+                gender, role, op_user_id, dob,
+                dw_load_ts, dw_created_by
+            )
+            SELECT
+                gen_random_uuid(),
+                (per."personId")::UUID,
+                per."name",
+                COALESCE(per."phone", per."mobile"),
+                per."email",
+                per."panNumber",
+                per."gender",
+                per."role",
+                per."opUserId",
+                per."dob",
+                CURRENT_TIMESTAMP,
+                'etl_pipeline'
+            FROM bronze.stg_vj_person per
+            -- Deduplicate: latest sync per personId
+            INNER JOIN (
+                SELECT "personId", MAX(_sync_id) AS max_sync_id
+                FROM bronze.stg_vj_person
+                GROUP BY "personId"
+            ) per_latest ON per."personId" = per_latest."personId"
+                        AND per._sync_id = per_latest.max_sync_id
+            ON CONFLICT (buyer_id) DO UPDATE SET
+                name           = EXCLUDED.name,
+                contact_number = EXCLUDED.contact_number,
+                email          = EXCLUDED.email,
+                pan            = EXCLUDED.pan,
+                gender         = EXCLUDED.gender,
+                role           = EXCLUDED.role,
+                op_user_id     = EXCLUDED.op_user_id,
+                dob            = EXCLUDED.dob,
+                dw_update_ts   = CURRENT_TIMESTAMP
+        """)
+        with self.engine.begin() as conn:
+            result = conn.execute(query)
+            logger.info("Upserted %d rows into dim_buyer", result.rowcount)
