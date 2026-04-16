@@ -1,0 +1,93 @@
+services:
+  # ── Data Warehouse (PostgreSQL) ──
+  warehouse:
+    image: postgres:16-alpine
+    container_name: askvj-warehouse
+    environment:
+      POSTGRES_DB: askvj_warehouse
+      POSTGRES_USER: askvj
+      POSTGRES_PASSWORD: ${WAREHOUSE_PASSWORD:-askvj_dev}
+    ports:
+      - "5432:5432"
+    volumes:
+      - warehouse_data:/var/lib/postgresql/data
+      # Auto-run schema setup on first start
+      - ./backend/etl/sql/bronze_schema.sql:/docker-entrypoint-initdb.d/01_bronze.sql
+      - ./backend/etl/sql/silver_schema.sql:/docker-entrypoint-initdb.d/02_silver.sql
+      - ./backend/etl/sql/gold_schema.sql:/docker-entrypoint-initdb.d/03_gold.sql
+      - ./backend/etl/sql/app_schema.sql:/docker-entrypoint-initdb.d/04_app.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U askvj -d askvj_warehouse"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── Backend API (FastAPI) ──
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: askvj-backend
+    network_mode: "host"
+    env_file: .env
+    environment:
+      WAREHOUSE_HOST: localhost
+      WAREHOUSE_PORT: 5432
+      WAREHOUSE_DB: askvj_warehouse
+      WAREHOUSE_USER: askvj
+      VECTOR_DB_HOST: localhost
+      VECTOR_DB_PORT: 8000
+      LLM_REASONING_ENDPOINT: http://localhost:11434
+      LLM_SQL_ENDPOINT: http://localhost:11434
+      LLM_EMBEDDING_ENDPOINT: http://localhost:11434
+    # ports mapping is informational with host networking (container shares host ports)
+    # ports:
+    #   - "8000:8000"
+    restart: unless-stopped
+
+  # ── Frontend (React + Nginx) ──
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: askvj-frontend
+    ports:
+      - "3001:80"
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+  # ── Vector Database (ChromaDB) ──
+  vectordb:
+    image: chromadb/chroma:latest
+    container_name: askvj-vectordb
+    ports:
+      - "8001:8000"
+    volumes:
+      - vectordb_data:/chroma/chroma
+    environment:
+      ANONYMIZED_TELEMETRY: "false"
+
+  # ── Local LLM (Ollama) ──
+  # Requires GPU passthrough. Run with:
+  #   docker compose --profile gpu up
+  ollama:
+    image: ollama/ollama:latest
+    container_name: askvj-ollama
+    profiles: ["gpu"]
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+volumes:
+  warehouse_data:
+  vectordb_data:
+  ollama_data:
